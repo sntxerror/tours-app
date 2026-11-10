@@ -18,7 +18,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Test tooling: Jest (backend), Vitest + Vue Test Utils (frontend), Playwright e2e (desktop Chrome only) with API specs for auth, roles and business rules.
 
+- Events: `travel.vacation-request.expired` (system job, once per request), `travel.auth.login-succeeded` and `travel.auth.login-failed`.
+- Event envelope: `schemaVersion`, `correlationId` (from `X-Request-Id`, echoed on responses) and a typed `actor`; `updated` carries the changed dates, `approved`/`rejected` carry `decidedAt` and the comment.
+- Unit tests for the envelope, publishers, expiry job, login events and logging; e2e specs for every lifecycle and login event.
+
 ### Changed
+
+- Event logs are one clean line per event (no payload dump) and `commoneventframework` debug output is muted.
+- Playwright starts its own backend/Vite on separate ports with a dedicated event bus and queue instead of reusing running servers.
+- Events published while LocalStack is still provisioning the bus now wait for it instead of failing.
+- `vacation_requests.expired_at` column (existing databases need `docker compose down -v`).
 
 - Frontend upgraded to Vite 8, `@vitejs/plugin-vue` 6, `vue-tsc` 3 and Vue Router 5 (v5's optional `vite` peer requires Vite 7+; no code changes were needed).
 

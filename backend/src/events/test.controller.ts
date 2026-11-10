@@ -1,5 +1,6 @@
 import { Controller, Get, Post } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
+import { ANONYMOUS_ACTOR } from './event-envelope';
 import { EventPublisherService } from './event-publisher.service';
 import { ReceivedEventsStore } from './received-events.store';
 
@@ -14,7 +15,11 @@ export class TestController {
 
   @Post('publish')
   publish() {
-    return this.publisher.publish('travel.test.ping', { message: 'hello from NestJS' });
+    return this.publisher.publish(
+      'travel.test.ping',
+      { message: 'hello from NestJS' },
+      { actor: ANONYMOUS_ACTOR },
+    );
   }
 
   @Get('events')

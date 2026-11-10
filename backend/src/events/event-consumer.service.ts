@@ -8,6 +8,7 @@ import {
 import { buildCommonEvent } from 'commoneventframework';
 import type { LambdaEvent } from 'commoneventframework/dist/types/commonEvent';
 import { SQS_CLIENT } from '../aws/aws.tokens';
+import { describeEvent, withQuietConsoleLog } from './event-log';
 import { LocalstackBootstrapService } from '../localstack/localstack-bootstrap.service';
 import { ReceivedEventsStore } from './received-events.store';
 
@@ -77,9 +78,11 @@ export class EventConsumerService implements OnModuleInit, OnModuleDestroy {
     try {
       const body = message.Body ?? '';
       // Normalise through commoneventframework exactly as a Lambda SQS trigger would.
-      const common = buildCommonEvent(
-        { Records: [{ eventSource: 'aws:sqs', body }] } as unknown as LambdaEvent,
-        new Set(),
+      const common = withQuietConsoleLog(() =>
+        buildCommonEvent(
+          { Records: [{ eventSource: 'aws:sqs', body }] } as unknown as LambdaEvent,
+          new Set(),
+        ),
       );
       const envelope = JSON.parse(common.body ?? body);
       this.store.add({
@@ -87,11 +90,14 @@ export class EventConsumerService implements OnModuleInit, OnModuleDestroy {
         commonEventVersion: common.version,
         envelope,
       });
-      this.logger.log(`Received event:\n${JSON.stringify(envelope, null, 2)}`);
+      // The EventBridge wrapper holds our envelope in `detail`.
+      this.logger.log(`Received ${describeEvent(envelope.detail ?? envelope)}`);
       return true;
     } catch (err) {
       // Leave it on the queue; SQS redelivers after the visibility timeout.
-      this.logger.error(`Failed to process ${message.MessageId}: ${(err as Error).message}`);
+      this.logger.error(
+        `Could not process message ${message.MessageId}: ${(err as Error).message}`,
+      );
       return false;
     }
   }

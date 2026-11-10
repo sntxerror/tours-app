@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import type { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
+import { AuthEventsPublisher } from './auth-events.publisher';
 import type { JwtPayload } from './auth.types';
 import type { LoginDto } from './dto/login.dto';
 
@@ -14,16 +15,21 @@ export class AuthService {
   constructor(
     private readonly users: UsersService,
     private readonly jwt: JwtService,
+    private readonly events: AuthEventsPublisher,
   ) {}
 
   async login({ email, password }: LoginDto): Promise<{ accessToken: string; user: User }> {
     const found = await this.users.findByEmailWithPassword(email);
     const valid = await bcrypt.compare(password, found?.password ?? DUMMY_HASH);
-    if (!found || !valid) throw new UnauthorizedException('Invalid email or password');
+    if (!found || !valid) {
+      void this.events.loginFailed(email, found ? 'wrong-password' : 'unknown-email');
+      throw new UnauthorizedException('Invalid email or password');
+    }
 
     const payload: JwtPayload = { sub: found.id, role: found.role };
     // Re-read without the hash so it can never leak into the response.
     const user = await this.profile(found.id);
+    void this.events.loginSucceeded(user);
     return { accessToken: await this.jwt.signAsync(payload), user };
   }
 

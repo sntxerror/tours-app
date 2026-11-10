@@ -48,3 +48,41 @@ export async function expectError(
   expect(res.status()).toBe(status);
   if (message) expect(JSON.stringify((await res.json()).message)).toMatch(message);
 }
+
+export interface ReceivedEnvelope {
+  eventId: string;
+  schemaVersion: number;
+  occurredAt: string;
+  type: string;
+  correlationId: string;
+  actor: { type: string; id?: string; role?: string };
+  data: Record<string, unknown>;
+}
+
+/**
+ * Waits until the worker has consumed an event matching `predicate` (EventBridge -> SQS -> the
+ * dev-only `/api/test/events` log) and returns its envelope. Match on ids unique to the test, since
+ * other tests run in parallel against the same bus.
+ */
+export async function waitForEvent(
+  request: APIRequestContext,
+  predicate: (event: ReceivedEnvelope) => boolean,
+): Promise<ReceivedEnvelope> {
+  let found: ReceivedEnvelope | undefined;
+  await expect
+    .poll(
+      async () => {
+        const res = await request.get('/api/test/events');
+        // The worker stores the EventBridge wrapper; our own envelope is its `detail`.
+        const received: { envelope: { detail: ReceivedEnvelope } }[] = await res.json();
+        found = received.map((r) => r.envelope.detail).find(predicate);
+        return found !== undefined;
+      },
+      { message: 'event was not delivered to the queue consumer', timeout: 15_000 },
+    )
+    .toBe(true);
+  return found!;
+}
+
+/** A caller-chosen request id: lets a test find the events caused by exactly its own request. */
+export const newRequestId = (): string => `e2e-${crypto.randomUUID()}`;

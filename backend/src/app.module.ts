@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { type MiddlewareConsumer, Module, type NestModule, RequestMethod } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
+import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
 import { AwsModule } from './aws/aws.module';
 import { EventsModule } from './events/events.module';
 import { LocalstackModule } from './localstack/localstack.module';
@@ -35,4 +36,10 @@ import { VacationRequestsModule } from './vacation-requests/vacation-requests.mo
     VacationRequestsModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(RequestContextMiddleware)
+      .forRoutes({ path: '*path', method: RequestMethod.ALL });
+  }
+}

@@ -17,7 +17,8 @@ import type {
 } from './dto/list-vacation-requests-query.dto';
 import type { TeamVacationsQueryDto } from './dto/team-vacations-query.dto';
 import type { UpdateVacationRequestDto } from './dto/update-vacation-request.dto';
-import { VacationEvent, VacationEventsPublisher } from './vacation-events.publisher';
+import { userActor } from '../events/event-envelope';
+import { VacationEventsPublisher } from './vacation-events.publisher';
 import { VacationRequest } from './vacation-request.entity';
 import { assertValidPeriod } from './vacation-rules';
 import { VacationStatus } from './vacation-status.enum';
@@ -58,7 +59,7 @@ export class VacationRequestsService {
         }),
       ),
     );
-    void this.events.emit(VacationEvent.Submitted, saved, user.id);
+    void this.events.submitted(saved, userActor(user));
     return saved;
   }
 
@@ -97,7 +98,7 @@ export class VacationRequestsService {
     });
 
     const updated = await this.findOrFail(id);
-    void this.events.emit(VacationEvent.Updated, updated, user.id);
+    void this.events.updated(current, updated, userActor(user));
     return updated;
   }
 
@@ -108,7 +109,7 @@ export class VacationRequestsService {
 
     const { affected } = await this.requests.delete({ id, status: VacationStatus.Pending });
     if (!affected) throw this.notModifiable(VacationStatus.Approved);
-    void this.events.emit(VacationEvent.Cancelled, current, user.id);
+    void this.events.cancelled(current, userActor(user));
   }
 
   // ---------------------------------------------------------------- validator
@@ -187,9 +188,7 @@ export class VacationRequestsService {
     });
 
     const decided = await this.findOrFail(id);
-    const type =
-      status === VacationStatus.Approved ? VacationEvent.Approved : VacationEvent.Rejected;
-    void this.events.emit(type, decided, validator.id);
+    void this.events.decided(decided, userActor(validator));
     return decided;
   }
 

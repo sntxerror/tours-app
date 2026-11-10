@@ -25,6 +25,7 @@ CREATE TABLE vacation_requests (
     reason      text,
     status      vacation_status NOT NULL DEFAULT 'Pending',
     comments    text,                              -- validator comment; mandatory on rejection
+    expired_at  timestamptz,                       -- set once when a request is still Pending after its start date
     created_at  timestamptz     NOT NULL DEFAULT now(),
     updated_at  timestamptz     NOT NULL DEFAULT now(),
 
@@ -40,6 +41,9 @@ CREATE TABLE vacation_requests (
 -- Requester view (own requests, newest first) and validator filters/pagination.
 CREATE INDEX vacation_requests_user_created_idx   ON vacation_requests (user_id, created_at DESC);
 CREATE INDEX vacation_requests_status_created_idx ON vacation_requests (status, created_at DESC);
+-- Expiry job: only the few overdue, not-yet-expired pending requests.
+CREATE INDEX vacation_requests_expirable_idx      ON vacation_requests (start_date)
+    WHERE status = 'Pending' AND expired_at IS NULL;
 -- Team vacation planning: range lookups on dates.
 CREATE INDEX vacation_requests_dates_idx          ON vacation_requests (start_date, end_date);
 

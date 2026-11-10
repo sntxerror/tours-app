@@ -69,7 +69,7 @@ npx playwright install chromium            # first time only
 npm run test:e2e                           # or test:e2e:ui for the interactive runner
 ```
 
-E2E runs in desktop Chrome only for now (`playwright.config.ts`) and reuses a backend/Vite already running on `:3000`/`:5173`. Specs live in `e2e/tests`; API specs call `/api` through the Vite proxy. Requests use random far-future dates, so they can be re-run on the same database without overlaps (approved requests cannot be deleted).
+E2E runs in desktop Chrome only for now (`playwright.config.ts`). It always starts its own backend (`:3100`) and Vite (`:5273`) from the current source, with a dedicated event bus and queue (`e2e-*`), so it never reuses a stale server or shares events with the Docker stack or your dev servers (override with `E2E_API_PORT` / `E2E_WEB_PORT`). Specs live in `e2e/tests`; API specs call `/api` through the Vite proxy, and event specs read what the queue consumer received from `/api/test/events`. Requests use random far-future dates, so they can be re-run on the same database without overlaps (approved requests cannot be deleted).
 
 ## Database
 
@@ -121,7 +121,45 @@ Lists return `{ items, meta: { page, limit, total, totalPages } }` (`limit` defa
 
 Status codes: 400 validation or date rule, 401 no/invalid token, 403 wrong role, 404 missing (or not yours), 409 conflict (overlap, request already decided or frozen).
 
-Lifecycle events are published to the bus as `travel.vacation-request.{submitted,updated,cancelled,approved,rejected}`. Publishing is best-effort: a bus outage is logged and never fails the request.
+Business actions and logins publish events to the bus; see [Events](#events).
+
+## Events
+
+Commands (submit, edit, cancel, approve, reject, log in) are the HTTP endpoints; events are the facts announced **after** the database change is committed, published to EventBridge and routed to SQS.
+
+| Event type                          | Raised when                                                  | `data` (besides `requestId`, `userId`, `startDate`, `endDate`, `status`)          |
+| ----------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `travel.vacation-request.submitted` | A requester submits a request                                |                                                                                   |
+| `travel.vacation-request.updated`   | A pending request is edited                                  | `changes` (`startDate`/`endDate` `{from,to}`, only what changed), `reasonChanged` |
+| `travel.vacation-request.cancelled` | A pending request is cancelled                               |                                                                                   |
+| `travel.vacation-request.approved`  | A validator approves                                         | `decidedAt`, `comment`                                                            |
+| `travel.vacation-request.rejected`  | A validator rejects                                          | `decidedAt`, `comment` (required)                                                 |
+| `travel.vacation-request.expired`   | A request is still Pending after its start date (system job) | `expiredAt`                                                                       |
+| `travel.auth.login-succeeded`       | Successful login                                             | `userId`, `role`, `ip`                                                            |
+| `travel.auth.login-failed`          | Failed login                                                 | `email` (lower-cased), `reason` (`unknown-email` / `wrong-password`), `ip`        |
+
+Every event shares one envelope (`backend/src/events/event-envelope.ts`):
+
+```json
+{
+  "eventId": "uuid",
+  "schemaVersion": 1,
+  "occurredAt": "2026-11-10T14:52:15.457Z",
+  "source": "travel-app.api",
+  "type": "travel.vacation-request.approved",
+  "correlationId": "the request's X-Request-Id",
+  "actor": { "type": "user", "id": "uuid", "role": "Validator" },
+  "data": {}
+}
+```
+
+- **`correlationId`** is the caller's `X-Request-Id` header when valid, otherwise a generated UUID; it is echoed on the response. Every event caused by one request (or one expiry job run) shares it.
+- **`actor`** is `user` (id and role), `system` (background job) or `anonymous` (failed login).
+- **Payloads carry ids and a small snapshot only**, never names, emails of requesters, the free-text reason or passwords. Consumers look up the rest by `requestId`/`userId`.
+- **Delivery.** Lifecycle and login events are best-effort: a bus outage is logged and never fails the user's request. The expiry event is stricter: a request is marked expired (`expired_at`) only together with a successful publish, and the claim is released on failure so the next run retries. Its status stays `Pending`, so a validator can still decide it.
+- **Expiry job** runs at startup and every `VACATION_EXPIRY_INTERVAL_SECONDS` (default 600, `0` disables). It is safe with several API instances: the claim is one atomic `UPDATE ... RETURNING`.
+- **Routing.** `commoneventframework` routes an SQS message by queue (`PUT /sqs/{queueName}`), not by event type. A real deployment would use one queue per consumer concern (notifications, calendar, audit) with an EventBridge rule filtering on `detail-type`, and switch on `type` inside each handler.
+- **Logs** show one line per event, without payloads: `Published travel.x id=3f2a9c1e correlation=7b1d0e44 actor=user:00000000(Validator)` and the matching `Received ...`.
 
 ## Technical decisions
 
@@ -135,7 +173,9 @@ Lifecycle events are published to the bus as `travel.vacation-request.{submitted
 ## Known limitations
 
 - Received events are kept in memory (last 50); lost on restart.
-- Library debug logging from `buildCommonEvent` is not suppressed.
+- Events are published after the database commit, not in the same transaction: a crash in between loses the announcement (the lifecycle events; the expiry event is retried). A transactional outbox would close the gap.
+- A request that expired (start date passed while Pending) can still be approved or rejected; only the event is sent.
+- The login events carry the client IP as seen by the API; behind nginx/a proxy that is the proxy's address unless `trust proxy` is configured.
 - The requester and validator UIs (login, Vuex store, request forms, dashboard, team view) are not built yet.
 - No login rate limiting, refresh tokens or token revocation; tokens last `JWT_EXPIRES_IN_SECONDS` (default 1h).
 - `/api/test/*` is unauthenticated on purpose (dev-only test page) and should be removed or protected for production.
