@@ -1,7 +1,10 @@
 import { Controller, Get, Post } from '@nestjs/common';
+import { Public } from '../auth/decorators/public.decorator';
 import { EventPublisherService } from './event-publisher.service';
 import { ReceivedEventsStore } from './received-events.store';
 
+/** Dev-only plumbing check behind the /events-test page; intentionally unauthenticated. */
+@Public()
 @Controller('test')
 export class TestController {
   constructor(
