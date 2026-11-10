@@ -1,0 +1,9 @@
+node_modules
+dist
+build
+coverage
+.nest
+.vite
+*.lock
+package-lock.json
+.claude

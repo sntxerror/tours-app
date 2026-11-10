@@ -1,0 +1,37 @@
+services:
+  localstack:
+    image: localstack/localstack:3.8
+    ports:
+      - '${LOCALSTACK_PORT:-4566}:4566'
+    environment:
+      SERVICES: events,sqs,sns
+      AWS_DEFAULT_REGION: eu-west-1
+    healthcheck:
+      test: ['CMD', 'curl', '-sf', 'http://localhost:4566/_localstack/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - localstack-data:/var/lib/localstack
+
+  app:
+    build: ./backend
+    ports:
+      - '${BACKEND_PORT:-3000}:3000'
+    env_file: ./backend/.env
+    environment:
+      # Inside the compose network LocalStack is reachable by service name, not localhost.
+      AWS_ENDPOINT_URL: http://localstack:4566
+    depends_on:
+      localstack:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - '${FRONTEND_PORT:-8080}:80'
+    depends_on:
+      - app
+
+volumes:
+  localstack-data:
