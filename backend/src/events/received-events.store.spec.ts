@@ -22,4 +22,15 @@ describe('ReceivedEventsStore', () => {
     expect(list[0].receivedAt).toBe('t60');
     expect(list[49].receivedAt).toBe('t11');
   });
+
+  it('lists an event redelivered with the same eventId once, but never dedupes events without one', () => {
+    const store = new ReceivedEventsStore();
+    store.add({ ...event(1), eventId: 'e-1' });
+    store.add({ ...event(2), eventId: 'e-1' });
+    store.add({ ...event(3), eventId: 'e-2' });
+    store.add(event(4));
+    store.add(event(4));
+
+    expect(store.list().map((e) => e.receivedAt)).toEqual(['t4', 't4', 't3', 't1']);
+  });
 });

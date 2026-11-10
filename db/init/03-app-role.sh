@@ -15,5 +15,7 @@ GRANT CONNECT ON DATABASE :"db" TO :"app_user";
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO :"app_user";
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON users, vacation_requests TO :"app_user";
+GRANT SELECT, INSERT, UPDATE, DELETE ON users, vacation_requests, event_outbox TO :"app_user";
+-- The audit trail is append-only for the application: it can write and read, never change or erase.
+GRANT SELECT, INSERT ON audit_log TO :"app_user";
 EOSQL

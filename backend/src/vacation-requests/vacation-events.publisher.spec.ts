@@ -1,10 +1,13 @@
-import type { EventPublisherService } from '../events/event-publisher.service';
+import type { EntityManager } from 'typeorm';
 import { SYSTEM_ACTOR } from '../events/event-envelope';
-import { VacationEvent, VacationEventsPublisher } from './vacation-events.publisher';
+import { VacationEvent } from '../events/event-types';
+import type { OutboxService } from '../events/outbox/outbox.service';
+import { VacationEventsPublisher } from './vacation-events.publisher';
 import type { VacationRequest } from './vacation-request.entity';
 import { VacationStatus } from './vacation-status.enum';
 
 const actor = { type: 'user', id: 'u-1', role: 'Requester' } as never;
+const em = { tx: true } as unknown as EntityManager;
 
 const request = (overrides: Partial<VacationRequest> = {}): VacationRequest =>
   ({
@@ -20,21 +23,17 @@ const request = (overrides: Partial<VacationRequest> = {}): VacationRequest =>
   }) as VacationRequest;
 
 function setup() {
-  const publish = jest.fn().mockResolvedValue(undefined);
-  const publishBestEffort = jest.fn().mockResolvedValue(undefined);
-  const events = new VacationEventsPublisher({
-    publish,
-    publishBestEffort,
-  } as unknown as EventPublisherService);
-  return { events, publish, publishBestEffort };
+  const record = jest.fn().mockResolvedValue(undefined);
+  const events = new VacationEventsPublisher({ record } as unknown as OutboxService);
+  return { events, record };
 }
 
-describe('VacationEventsPublisher', () => {
-  it('submitted: ids and a snapshot, no free-text reason', async () => {
-    const { events, publishBestEffort } = setup();
-    await events.submitted(request(), actor);
+describe('VacationEventsPublisher (records into the outbox)', () => {
+  it('submitted: ids and a snapshot, no free-text reason, in the caller transaction', async () => {
+    const { events, record } = setup();
+    await events.submitted(request(), actor, em);
 
-    expect(publishBestEffort).toHaveBeenCalledWith(
+    expect(record).toHaveBeenCalledWith(
       VacationEvent.Submitted,
       {
         requestId: 'r-1',
@@ -43,21 +42,19 @@ describe('VacationEventsPublisher', () => {
         endDate: '2030-07-05',
         status: 'Pending',
       },
-      { actor },
+      actor,
+      em,
     );
-    expect(JSON.stringify(publishBestEffort.mock.calls[0][1])).not.toContain('Private holiday');
+    expect(JSON.stringify(record.mock.calls[0][1])).not.toContain('Private holiday');
   });
 
   it('updated: reports exactly which dates changed and whether the reason did', async () => {
-    const { events, publishBestEffort } = setup();
-    await events.updated(
-      request(),
-      request({ endDate: '2030-07-09', reason: 'new reason' }),
-      actor,
-    );
+    const { events, record } = setup();
+    await events.updated(request(), request({ endDate: '2030-07-09', reason: 'new' }), actor, em);
 
-    const [type, data] = publishBestEffort.mock.calls[0];
+    const [type, data, , manager] = record.mock.calls[0];
     expect(type).toBe(VacationEvent.Updated);
+    expect(manager).toBe(em);
     expect(data).toMatchObject({
       endDate: '2030-07-09',
       changes: { endDate: { from: '2030-07-05', to: '2030-07-09' } },
@@ -67,59 +64,69 @@ describe('VacationEventsPublisher', () => {
   });
 
   it('updated: an edit that only touches the reason has no date changes', async () => {
-    const { events, publishBestEffort } = setup();
-    await events.updated(request(), request({ reason: 'other' }), actor);
-    expect(publishBestEffort.mock.calls[0][1]).toMatchObject({ changes: {}, reasonChanged: true });
+    const { events, record } = setup();
+    await events.updated(request(), request({ reason: 'other' }), actor, em);
+    expect(record.mock.calls[0][1]).toMatchObject({ changes: {}, reasonChanged: true });
+  });
+
+  it('updated: reports a changed start date too, and reasonChanged false when untouched', async () => {
+    const { events, record } = setup();
+    await events.updated(request(), request({ startDate: '2030-06-28' }), actor, em);
+    expect(record.mock.calls[0][1]).toMatchObject({
+      changes: { startDate: { from: '2030-07-01', to: '2030-06-28' } },
+      reasonChanged: false,
+    });
   });
 
   it('cancelled: snapshot of the request that was removed', async () => {
-    const { events, publishBestEffort } = setup();
-    await events.cancelled(request(), actor);
-    expect(publishBestEffort).toHaveBeenCalledWith(
+    const { events, record } = setup();
+    await events.cancelled(request(), actor, em);
+    expect(record).toHaveBeenCalledWith(
       VacationEvent.Cancelled,
       expect.objectContaining({ requestId: 'r-1', status: 'Pending' }),
-      { actor },
+      actor,
+      em,
     );
   });
 
   it('decided: approved carries decidedAt and the optional comment', async () => {
-    const { events, publishBestEffort } = setup();
-    await events.decided(request({ status: VacationStatus.Approved, comments: 'Enjoy' }), actor);
-    expect(publishBestEffort).toHaveBeenCalledWith(
+    const { events, record } = setup();
+    await events.decided(
+      request({ status: VacationStatus.Approved, comments: 'Enjoy' }),
+      actor,
+      em,
+    );
+    expect(record).toHaveBeenCalledWith(
       VacationEvent.Approved,
       expect.objectContaining({
         status: 'Approved',
         decidedAt: '2030-06-01T10:00:00.000Z',
         comment: 'Enjoy',
       }),
-      { actor },
+      actor,
+      em,
     );
   });
 
   it('decided: rejected carries the rejection comment', async () => {
-    const { events, publishBestEffort } = setup();
+    const { events, record } = setup();
     await events.decided(
       request({ status: VacationStatus.Rejected, comments: 'Understaffed' }),
       actor,
+      em,
     );
-    expect(publishBestEffort).toHaveBeenCalledWith(
+    expect(record).toHaveBeenCalledWith(
       VacationEvent.Rejected,
       expect.objectContaining({ status: 'Rejected', comment: 'Understaffed' }),
-      { actor },
+      actor,
+      em,
     );
   });
 
-  it('expired: published strictly (not best-effort) by the system actor', async () => {
-    const { events, publish, publishBestEffort } = setup();
-    await events.expired({
-      id: 'r-1',
-      userId: 'u-1',
-      startDate: '2030-07-01',
-      endDate: '2030-07-05',
-      expiredAt: new Date('2030-07-02T00:00:00Z'),
-    });
-    expect(publishBestEffort).not.toHaveBeenCalled();
-    expect(publish).toHaveBeenCalledWith(
+  it('expired: raised by the system actor with the expiry time', async () => {
+    const { events, record } = setup();
+    await events.expired(request({ expiredAt: new Date('2030-07-02T00:00:00Z') }) as never, em);
+    expect(record).toHaveBeenCalledWith(
       VacationEvent.Expired,
       {
         requestId: 'r-1',
@@ -129,15 +136,14 @@ describe('VacationEventsPublisher', () => {
         status: 'Pending',
         expiredAt: '2030-07-02T00:00:00.000Z',
       },
-      { actor: SYSTEM_ACTOR },
+      SYSTEM_ACTOR,
+      em,
     );
   });
 
-  it('expired: lets a publish failure propagate so the job can retry', async () => {
-    const { events, publish } = setup();
-    publish.mockRejectedValue(new Error('bus down'));
-    await expect(
-      events.expired({ id: 'r', userId: 'u', startDate: 'a', endDate: 'b', expiredAt: new Date() }),
-    ).rejects.toThrow('bus down');
+  it('propagates a failed write, so the surrounding transaction rolls back', async () => {
+    const { events, record } = setup();
+    record.mockRejectedValue(new Error('insert failed'));
+    await expect(events.submitted(request(), actor, em)).rejects.toThrow('insert failed');
   });
 });

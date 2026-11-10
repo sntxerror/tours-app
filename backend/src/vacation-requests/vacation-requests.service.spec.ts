@@ -70,6 +70,10 @@ function setup(
     update: jest.fn().mockResolvedValue({ affected: 1 }),
     delete: jest.fn().mockResolvedValue({ affected: 1 }),
   };
+  // The service runs each change in a transaction: the fake one hands the same repository back.
+  const em = { getRepository: () => requests };
+  const transaction = jest.fn(async (work: (m: typeof em) => Promise<unknown>) => work(em));
+  Object.assign(requests, { manager: { transaction } });
   const events = {
     submitted: jest.fn().mockResolvedValue(undefined),
     updated: jest.fn().mockResolvedValue(undefined),
@@ -80,7 +84,7 @@ function setup(
     requests as unknown as Repository<VacationRequest>,
     events as unknown as VacationEventsPublisher,
   );
-  return { service, requests, events, qb };
+  return { service, requests, events, qb, em, transaction };
 }
 
 const pgError = (code: string) =>
@@ -101,11 +105,11 @@ describe('VacationRequestsService.create', () => {
       endDate: FUTURE_END,
       reason: 'family trip',
     });
-    expect(events.submitted).toHaveBeenCalledWith(saved, {
-      type: 'user',
-      id: alice.id,
-      role: UserRole.Requester,
-    });
+    expect(events.submitted).toHaveBeenCalledWith(
+      saved,
+      { type: 'user', id: alice.id, role: UserRole.Requester },
+      expect.anything(),
+    );
   });
 
   it.each([undefined, '', '   '])('stores a null reason for %p', async (reason) => {
@@ -173,12 +177,13 @@ describe('VacationRequestsService.update', () => {
     expect(qb.andWhere).toHaveBeenCalledWith('request.id <> :excludeId', { excludeId: 'r-1' });
     expect(requests.update).toHaveBeenCalledWith(
       { id: 'r-1', status: VacationStatus.Pending },
-      { startDate: FUTURE_START, endDate: '2099-05-09', reason: null },
+      { startDate: FUTURE_START, endDate: '2099-05-09', reason: null, expiredAt: null },
     );
     expect(result).toBe(updated);
     expect(events.updated).toHaveBeenCalledWith(
       expect.objectContaining({ endDate: FUTURE_END }),
       updated,
+      expect.anything(),
       expect.anything(),
     );
   });
@@ -190,11 +195,29 @@ describe('VacationRequestsService.update', () => {
     await service.update('r-1', alice, { reason: ' new ' });
 
     expect(qb.getOne).not.toHaveBeenCalled();
+    // The period is untouched, so the expiry marker must not be reset either.
     expect(requests.update).toHaveBeenCalledWith(expect.anything(), {
       startDate: '2000-01-01',
       endDate: '2000-01-05',
       reason: 'new',
     });
+  });
+
+  it('clears the expiry marker only when the period changes, so a re-dated request can expire again', async () => {
+    const expired = makeRequest({ expiredAt: new Date('2099-01-01T00:00:00Z') });
+    const moved = setup({ found: expired });
+    await moved.service.update('r-1', alice, { startDate: '2099-06-01', endDate: '2099-06-05' });
+    expect(moved.requests.update).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ expiredAt: null }),
+    );
+
+    const reasonOnly = setup({ found: expired });
+    await reasonOnly.service.update('r-1', alice, { reason: 'x' });
+    expect(reasonOnly.requests.update).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.not.objectContaining({ expiredAt: null }),
+    );
   });
 
   it('keeps the current reason when omitted and clears it when blank', async () => {
@@ -278,6 +301,7 @@ describe('VacationRequestsService.remove', () => {
     expect(events.cancelled).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'r-1' }),
       expect.anything(),
+      expect.anything(),
     );
   });
 
@@ -316,11 +340,11 @@ describe('VacationRequestsService approve / reject', () => {
       { status: VacationStatus.Approved, comments: 'enjoy' },
     );
     expect(result).toBe(decided);
-    expect(events.decided).toHaveBeenCalledWith(decided, {
-      type: 'user',
-      id: carol.id,
-      role: UserRole.Validator,
-    });
+    expect(events.decided).toHaveBeenCalledWith(
+      decided,
+      { type: 'user', id: carol.id, role: UserRole.Validator },
+      expect.anything(),
+    );
   });
 
   it('approves without a comment, storing null', async () => {
@@ -498,5 +522,60 @@ describe('VacationRequestsService.teamCalendar', () => {
     await expect(service.teamCalendar({ from: '2030-01-01', to: '2031-01-03' })).rejects.toThrow(
       'Date window cannot exceed 366 days',
     );
+  });
+});
+
+describe('VacationRequestsService event recording', () => {
+  it('records every event with the manager of the transaction that makes the change', async () => {
+    const created = setup();
+    await created.service.create(alice, { startDate: FUTURE_START, endDate: FUTURE_END });
+    expect(created.transaction).toHaveBeenCalledTimes(1);
+    expect(created.events.submitted).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      created.em,
+    );
+
+    const updated = setup();
+    await updated.service.update('r-1', alice, { reason: 'x' });
+    expect(updated.events.updated).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      updated.em,
+    );
+
+    const cancelled = setup();
+    await cancelled.service.remove('r-1', alice);
+    expect(cancelled.events.cancelled).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      cancelled.em,
+    );
+
+    const decided = setup();
+    await decided.service.approve('r-1', carol);
+    expect(decided.events.decided).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      decided.em,
+    );
+  });
+
+  it('fails the request when its event cannot be recorded, so the transaction rolls back', async () => {
+    const { service, events } = setup();
+    events.submitted.mockRejectedValue(new Error('outbox insert failed'));
+    await expect(
+      service.create(alice, { startDate: FUTURE_START, endDate: FUTURE_END }),
+    ).rejects.toThrow('outbox insert failed');
+  });
+
+  it('records nothing when the change itself is refused', async () => {
+    const { service, events, requests } = setup();
+    requests.update.mockResolvedValue({ affected: 0 });
+    await expect(service.update('r-1', alice, { reason: 'x' })).rejects.toThrow(ConflictException);
+    await expect(service.approve('r-1', carol)).rejects.toThrow(ConflictException);
+    expect(events.updated).not.toHaveBeenCalled();
+    expect(events.decided).not.toHaveBeenCalled();
   });
 });

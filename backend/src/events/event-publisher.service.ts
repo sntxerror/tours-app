@@ -15,6 +15,13 @@ export interface PublishOptions {
   source?: string;
 }
 
+/**
+ * The bus refused this particular event (as opposed to being unreachable). Retrying it as is will
+ * not help, which is what lets the outbox relay park a bad row instead of blocking everything behind it.
+ */
+export class EventRejectedError extends Error {}
+
+/** Sends envelopes to EventBridge. Application code does not call this: it records into the outbox. */
 @Injectable()
 export class EventPublisherService {
   private readonly logger = new Logger(EventPublisherService.name);
@@ -25,16 +32,12 @@ export class EventPublisherService {
     @Inject(EVENTBRIDGE_CLIENT) private readonly eventBridge: EventBridgeClient,
   ) {}
 
-  /** Publishes one event and throws if the bus rejects it. Use for events that must not be lost silently. */
-  async publish<T>(
+  buildEnvelope<T>(
     type: string,
     data: T,
     { actor, source = DEFAULT_EVENT_SOURCE }: PublishOptions,
-  ): Promise<EventEnvelope<T>> {
-    // Events raised while the bus is still being provisioned wait for it instead of failing.
-    await this.bootstrap.infra;
-
-    const envelope: EventEnvelope<T> = {
+  ): EventEnvelope<T> {
+    return {
       eventId: randomUUID(),
       schemaVersion: EVENT_SCHEMA_VERSION,
       occurredAt: new Date().toISOString(),
@@ -44,14 +47,30 @@ export class EventPublisherService {
       actor,
       data,
     };
+  }
+
+  /** Builds and sends one event right away, throwing if it cannot be delivered. Used by the dev ping. */
+  async publish<T>(type: string, data: T, options: PublishOptions): Promise<EventEnvelope<T>> {
+    const envelope = this.buildEnvelope(type, data, options);
+    await this.send(envelope);
+    return envelope;
+  }
+
+  /**
+   * Sends an existing envelope. Throws `EventRejectedError` when the bus rejects the entry and any
+   * other error when it cannot be reached.
+   */
+  async send(envelope: EventEnvelope): Promise<void> {
+    // Events raised while the bus is still being provisioned wait for it instead of failing.
+    await this.bootstrap.infra;
 
     const result = await this.eventBridge.send(
       new PutEventsCommand({
         Entries: [
           {
             EventBusName: this.config.getOrThrow<string>('EVENT_BUS_NAME'),
-            Source: source,
-            DetailType: type,
+            Source: envelope.source,
+            DetailType: envelope.type,
             Detail: JSON.stringify(envelope),
           },
         ],
@@ -60,21 +79,10 @@ export class EventPublisherService {
 
     if (result.FailedEntryCount) {
       const failed = result.Entries?.[0];
-      throw new Error(`PutEvents failed: ${failed?.ErrorCode} ${failed?.ErrorMessage}`);
+      throw new EventRejectedError(
+        `PutEvents failed: ${failed?.ErrorCode} ${failed?.ErrorMessage}`,
+      );
     }
     this.logger.log(`Published ${describeEvent(envelope)}`);
-    return envelope;
-  }
-
-  /**
-   * Fire-and-forget variant for announcements of facts already stored in the database: a bus outage is
-   * logged and never fails the caller's request.
-   */
-  async publishBestEffort<T>(type: string, data: T, options: PublishOptions): Promise<void> {
-    try {
-      await this.publish(type, data, options);
-    } catch (err) {
-      this.logger.warn(`Could not publish ${type}: ${(err as Error).message}`);
-    }
   }
 }

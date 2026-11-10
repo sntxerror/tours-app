@@ -5,14 +5,15 @@ import {
   ReceiveMessageCommand,
   SQSClient,
 } from '@aws-sdk/client-sqs';
-import { buildCommonEvent } from 'commoneventframework';
-import type { LambdaEvent } from 'commoneventframework/dist/types/commonEvent';
 import { SQS_CLIENT } from '../aws/aws.tokens';
-import { describeEvent, withQuietConsoleLog } from './event-log';
 import { LocalstackBootstrapService } from '../localstack/localstack-bootstrap.service';
-import { ReceivedEventsStore } from './received-events.store';
+import { EventRouter } from './event-router.service';
 
-/** Long-polls the local queue in the background and deletes messages once handled. */
+/**
+ * Long-polls the event queue in the background and hands each message to the `EventRouter`. A message
+ * is deleted only once it was handled; otherwise SQS redelivers it after the visibility timeout and
+ * finally moves it to the dead-letter queue.
+ */
 @Injectable()
 export class EventConsumerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EventConsumerService.name);
@@ -22,7 +23,7 @@ export class EventConsumerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(SQS_CLIENT) private readonly sqs: SQSClient,
     private readonly bootstrap: LocalstackBootstrapService,
-    private readonly store: ReceivedEventsStore,
+    private readonly router: EventRouter,
   ) {}
 
   onModuleInit(): void {
@@ -36,8 +37,9 @@ export class EventConsumerService implements OnModuleInit, OnModuleDestroy {
 
   private async run(): Promise<void> {
     let queueUrl: string;
+    let queueArn: string;
     try {
-      ({ queueUrl } = await this.bootstrap.infra);
+      ({ queueUrl, queueArn } = await this.bootstrap.infra);
     } catch {
       this.logger.error('Consumer disabled: infrastructure was never provisioned');
       return;
@@ -54,9 +56,7 @@ export class EventConsumerService implements OnModuleInit, OnModuleDestroy {
           }),
           { abortSignal: this.abort.signal },
         );
-        if (Messages.length === 0) continue;
-
-        const handled = Messages.filter((m) => this.handle(m));
+        const handled = await this.processBatch(Messages, queueArn);
         if (handled.length > 0) {
           await this.sqs.send(
             new DeleteMessageBatchCommand({
@@ -73,32 +73,19 @@ export class EventConsumerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Returns true when the message was processed and may be deleted. */
-  private handle(message: Message): boolean {
-    try {
-      const body = message.Body ?? '';
-      // Normalise through commoneventframework exactly as a Lambda SQS trigger would.
-      const common = withQuietConsoleLog(() =>
-        buildCommonEvent(
-          { Records: [{ eventSource: 'aws:sqs', body }] } as unknown as LambdaEvent,
-          new Set(),
-        ),
-      );
-      const envelope = JSON.parse(common.body ?? body);
-      this.store.add({
-        receivedAt: new Date().toISOString(),
-        commonEventVersion: common.version,
-        envelope,
-      });
-      // The EventBridge wrapper holds our envelope in `detail`.
-      this.logger.log(`Received ${describeEvent(envelope.detail ?? envelope)}`);
-      return true;
-    } catch (err) {
-      // Leave it on the queue; SQS redelivers after the visibility timeout.
-      this.logger.error(
-        `Could not process message ${message.MessageId}: ${(err as Error).message}`,
-      );
-      return false;
+  /** Returns the messages that were handled and may be deleted; the others are left for redelivery. */
+  async processBatch(messages: Message[], queueArn: string): Promise<Message[]> {
+    const handled: Message[] = [];
+    for (const message of messages) {
+      try {
+        await this.router.dispatch(message, queueArn);
+        handled.push(message);
+      } catch (err) {
+        this.logger.error(
+          `Could not process message ${message.MessageId}: ${(err as Error).message}`,
+        );
+      }
     }
+    return handled;
   }
 }

@@ -1,11 +1,14 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
 import { ANONYMOUS_ACTOR } from './event-envelope';
 import { EventPublisherService } from './event-publisher.service';
+import { DevEvent } from './event-types';
 import { ReceivedEventsStore } from './received-events.store';
+import { TestEndpointsGuard } from './test-endpoints.guard';
 
-/** Dev-only plumbing check behind the /events-test page; intentionally unauthenticated. */
+/** Dev-only plumbing check behind the /events-test page; unauthenticated, so off unless ENABLE_TEST_ENDPOINTS=true. */
 @Public()
+@UseGuards(TestEndpointsGuard)
 @Controller('test')
 export class TestController {
   constructor(
@@ -16,7 +19,7 @@ export class TestController {
   @Post('publish')
   publish() {
     return this.publisher.publish(
-      'travel.test.ping',
+      DevEvent.Ping,
       { message: 'hello from NestJS' },
       { actor: ANONYMOUS_ACTOR },
     );

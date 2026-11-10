@@ -19,10 +19,11 @@ const DEFAULT_INTERVAL_SECONDS = 600;
 /**
  * Finds requests still Pending after their start date and announces each exactly once with a
  * `vacation-request.expired` event. The status is left alone (a validator may still want to decide):
- * `expired_at` is the marker that the event was sent.
+ * `expired_at` marks that the event was raised. Editing the period clears it, so a request that gets
+ * new dates can expire again.
  *
- * Safe with several API instances: the claim is one atomic `UPDATE ... RETURNING`, so each request
- * is claimed by exactly one instance. If publishing fails the claim is released, so the next run retries.
+ * The marker and the event are written in one transaction, so they cannot diverge, and the claim is
+ * a single atomic `UPDATE ... RETURNING`, so several API instances never raise the event twice.
  */
 @Injectable()
 export class VacationExpiryService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -53,7 +54,7 @@ export class VacationExpiryService implements OnApplicationBootstrap, OnModuleDe
     clearInterval(this.timer);
   }
 
-  /** One scheduled run: its own correlation id ties together every event it emits. */
+  /** One scheduled run: its own correlation id ties together every event it records. */
   private async runJob(): Promise<void> {
     try {
       const count = await runWithRequestContext({ correlationId: randomUUID() }, () =>
@@ -65,40 +66,28 @@ export class VacationExpiryService implements OnApplicationBootstrap, OnModuleDe
     }
   }
 
-  /** Returns how many requests were expired and announced in this run. */
-  async expireOverdue(today = todayIso()): Promise<number> {
-    const claimed = await this.claim(today);
-    let announced = 0;
-    for (const request of claimed) {
-      try {
-        await this.events.expired({ ...request, expiredAt: request.expiredAt ?? new Date() });
-        announced++;
-      } catch (err) {
-        this.logger.warn(
-          `Could not announce expiry of ${request.id}, will retry: ${(err as Error).message}`,
-        );
-        await this.requests.update({ id: request.id }, { expiredAt: null });
-      }
-    }
-    return announced;
-  }
+  /** Returns how many requests were expired in this run. */
+  expireOverdue(today = todayIso()): Promise<number> {
+    return this.requests.manager.transaction(async (em) => {
+      // Only ids come back from the UPDATE: raw `date` columns would arrive as timezone-shifted
+      // `Date` objects, so the rows are reloaded through the entity, which keeps `YYYY-MM-DD` strings.
+      const result = await em
+        .createQueryBuilder()
+        .update(VacationRequest)
+        .set({ expiredAt: () => 'now()' })
+        .where('status = :status', { status: VacationStatus.Pending })
+        .andWhere('expired_at IS NULL')
+        .andWhere('start_date < :today', { today })
+        .returning(['id'])
+        .execute();
+      const ids = (result.raw as { id: string }[]).map((row) => row.id);
+      if (ids.length === 0) return 0;
 
-  /**
-   * Atomically marks the overdue requests as expired and returns them. Only ids come back from the
-   * UPDATE: raw `date` columns would arrive as timezone-shifted `Date` objects, so the rows are
-   * reloaded through the entity, which keeps dates as `YYYY-MM-DD` strings.
-   */
-  private async claim(today: string): Promise<VacationRequest[]> {
-    const result = await this.requests
-      .createQueryBuilder()
-      .update(VacationRequest)
-      .set({ expiredAt: () => 'now()' })
-      .where('status = :status', { status: VacationStatus.Pending })
-      .andWhere('expired_at IS NULL')
-      .andWhere('start_date < :today', { today })
-      .returning(['id'])
-      .execute();
-    const ids = (result.raw as { id: string }[]).map((row) => row.id);
-    return ids.length > 0 ? this.requests.findBy({ id: In(ids) }) : [];
+      const expired = await em.getRepository(VacationRequest).findBy({ id: In(ids) });
+      for (const request of expired) {
+        await this.events.expired({ ...request, expiredAt: request.expiredAt ?? new Date() }, em);
+      }
+      return expired.length;
+    });
   }
 }

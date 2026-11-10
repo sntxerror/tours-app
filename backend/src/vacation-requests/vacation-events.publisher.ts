@@ -1,27 +1,22 @@
 import { Injectable } from '@nestjs/common';
+import type { EntityManager } from 'typeorm';
 import { type EventActor, SYSTEM_ACTOR } from '../events/event-envelope';
-import { EventPublisherService } from '../events/event-publisher.service';
+import {
+  type DateChange,
+  type EventPayloads,
+  VacationEvent,
+  type VacationSnapshot,
+} from '../events/event-types';
+import { OutboxService } from '../events/outbox/outbox.service';
 import type { VacationRequest } from './vacation-request.entity';
 import { VacationStatus } from './vacation-status.enum';
 
-export const VacationEvent = {
-  Submitted: 'travel.vacation-request.submitted',
-  Updated: 'travel.vacation-request.updated',
-  Cancelled: 'travel.vacation-request.cancelled',
-  Approved: 'travel.vacation-request.approved',
-  Rejected: 'travel.vacation-request.rejected',
-  Expired: 'travel.vacation-request.expired',
-} as const;
+// Re-exported so existing imports keep working; the contract itself lives in events/event-types.ts.
+export { VacationEvent } from '../events/event-types';
 export type VacationEventType = (typeof VacationEvent)[keyof typeof VacationEvent];
 
-type Period = Pick<VacationRequest, 'startDate' | 'endDate'>;
-type Change = { from: string; to: string };
-
-/**
- * Payload common to every vacation event: ids and a small snapshot, never names, emails or the
- * free-text reason. Consumers that need more look it up by `requestId`.
- */
-const snapshot = (r: VacationRequest) => ({
+/** Ids and a small snapshot, never names, emails or the free-text reason: consumers look up the rest. */
+const snapshot = (r: VacationRequest): VacationSnapshot => ({
   requestId: r.id,
   userId: r.userId,
   startDate: r.startDate,
@@ -30,73 +25,61 @@ const snapshot = (r: VacationRequest) => ({
 });
 
 /**
- * Announces the request lifecycle on the event bus. The database is the source of truth, so the
- * lifecycle events are best-effort: a bus outage is logged and never fails the user's HTTP request.
- * The actor of each event is whoever triggered it (the requester, a validator, or the system).
+ * Records the request lifecycle in the outbox. Every method takes the `EntityManager` of the
+ * transaction that changes the request, so the event is stored atomically with the change and the
+ * outbox relay publishes it afterwards. The actor is whoever triggered it (requester, validator, system).
  */
 @Injectable()
 export class VacationEventsPublisher {
-  constructor(private readonly publisher: EventPublisherService) {}
+  constructor(private readonly outbox: OutboxService) {}
 
-  submitted(request: VacationRequest, actor: EventActor): Promise<void> {
-    return this.emit(VacationEvent.Submitted, snapshot(request), actor);
+  submitted(request: VacationRequest, actor: EventActor, em: EntityManager): Promise<void> {
+    return this.outbox.record(VacationEvent.Submitted, snapshot(request), actor, em);
   }
 
-  /** `before` is the request as it was prior to the edit, so consumers get the diff without refetching. */
-  updated(before: VacationRequest, after: VacationRequest, actor: EventActor): Promise<void> {
-    const changes: { startDate?: Change; endDate?: Change } = {};
-    for (const field of ['startDate', 'endDate'] as const satisfies readonly (keyof Period)[]) {
+  /** `before` is the request prior to the edit, so consumers get the diff without refetching. */
+  updated(
+    before: VacationRequest,
+    after: VacationRequest,
+    actor: EventActor,
+    em: EntityManager,
+  ): Promise<void> {
+    const changes: { startDate?: DateChange; endDate?: DateChange } = {};
+    for (const field of ['startDate', 'endDate'] as const) {
       if (before[field] !== after[field])
         changes[field] = { from: before[field], to: after[field] };
     }
-    return this.emit(
-      VacationEvent.Updated,
-      { ...snapshot(after), changes, reasonChanged: before.reason !== after.reason },
-      actor,
-    );
+    const data: EventPayloads[typeof VacationEvent.Updated] = {
+      ...snapshot(after),
+      changes,
+      reasonChanged: before.reason !== after.reason,
+    };
+    return this.outbox.record(VacationEvent.Updated, data, actor, em);
   }
 
-  cancelled(request: VacationRequest, actor: EventActor): Promise<void> {
-    return this.emit(VacationEvent.Cancelled, snapshot(request), actor);
+  cancelled(request: VacationRequest, actor: EventActor, em: EntityManager): Promise<void> {
+    return this.outbox.record(VacationEvent.Cancelled, snapshot(request), actor, em);
   }
 
   /** Approved or rejected, depending on the stored status. Carries the decision time and comment. */
-  decided(request: VacationRequest, actor: EventActor): Promise<void> {
+  decided(request: VacationRequest, actor: EventActor, em: EntityManager): Promise<void> {
+    const data = {
+      ...snapshot(request),
+      decidedAt: request.updatedAt.toISOString(),
+      comment: request.comments,
+    };
     const type =
       request.status === VacationStatus.Approved ? VacationEvent.Approved : VacationEvent.Rejected;
-    return this.emit(
-      type,
-      {
-        ...snapshot(request),
-        decidedAt: request.updatedAt.toISOString(),
-        comment: request.comments,
-      },
-      actor,
-    );
+    return this.outbox.record(type, data, actor, em);
   }
 
-  /**
-   * Unlike the others this one throws on failure: the expiry job marks a request as expired only
-   * once this event is out, so a failure must be visible to it (it releases the claim and retries).
-   */
-  async expired(
-    request: Pick<VacationRequest, 'id' | 'userId' | 'startDate' | 'endDate'> & { expiredAt: Date },
-  ): Promise<void> {
-    await this.publisher.publish(
+  /** Raised by the expiry job (the system) in the same transaction that marks the request expired. */
+  expired(request: VacationRequest & { expiredAt: Date }, em: EntityManager): Promise<void> {
+    return this.outbox.record(
       VacationEvent.Expired,
-      {
-        requestId: request.id,
-        userId: request.userId,
-        startDate: request.startDate,
-        endDate: request.endDate,
-        status: VacationStatus.Pending,
-        expiredAt: request.expiredAt.toISOString(),
-      },
-      { actor: SYSTEM_ACTOR },
+      { ...snapshot(request), expiredAt: request.expiredAt.toISOString() },
+      SYSTEM_ACTOR,
+      em,
     );
-  }
-
-  private emit(type: VacationEventType, data: object, actor: EventActor): Promise<void> {
-    return this.publisher.publishBestEffort(type, data, { actor });
   }
 }

@@ -14,6 +14,8 @@ const FRONTEND_URL = `http://localhost:${WEB_PORT}`;
  */
 export default defineConfig({
   testDir: './e2e/tests',
+  // Removes requests left by earlier runs so random date ranges never collide with them.
+  globalSetup: './e2e/global-setup.ts',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -38,6 +40,10 @@ export default defineConfig({
         EVENT_RULE_NAME: 'e2e-forward-all',
         // The expiry job is covered by unit tests; keep it from touching shared dev data here.
         VACATION_EXPIRY_INTERVAL_SECONDS: '0',
+        // Fast outbox relay so event specs do not wait for the default poll interval.
+        OUTBOX_POLL_INTERVAL_MS: '200',
+        // The dev-only event log endpoint is off by default; one spec checks the raw bus envelope.
+        ENABLE_TEST_ENDPOINTS: 'true',
       },
     },
     {

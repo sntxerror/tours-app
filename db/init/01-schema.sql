@@ -61,3 +61,40 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER vacation_requests_before_update
     BEFORE UPDATE ON vacation_requests
     FOR EACH ROW EXECUTE FUNCTION vacation_requests_before_update();
+
+-- Transactional outbox: events are written in the same transaction as the change they describe and
+-- published to the bus by a relay afterwards, so a crash or a bus outage cannot lose them.
+-- `id` is the event id (stable across redeliveries so consumers can de-duplicate).
+CREATE TABLE event_outbox (
+    id              uuid         PRIMARY KEY,
+    type            varchar(128) NOT NULL,
+    actor           jsonb        NOT NULL,
+    correlation_id  varchar(128) NOT NULL,
+    data            jsonb        NOT NULL,
+    occurred_at     timestamptz  NOT NULL DEFAULT now(),
+    published_at    timestamptz,
+    -- Times the bus rejected this specific event (not outages); the relay parks it after a few.
+    attempts        integer      NOT NULL DEFAULT 0,
+    last_error      text
+);
+-- The relay only ever looks at what is still unsent, oldest first.
+CREATE INDEX event_outbox_unsent_idx ON event_outbox (occurred_at, id) WHERE published_at IS NULL;
+-- Housekeeping of already published rows.
+CREATE INDEX event_outbox_published_idx ON event_outbox (published_at) WHERE published_at IS NOT NULL;
+
+-- Append-only audit trail built by a queue consumer. `event_id` is the primary key, which makes
+-- recording idempotent under at-least-once delivery.
+CREATE TABLE audit_log (
+    event_id        uuid         PRIMARY KEY,
+    type            varchar(128) NOT NULL,
+    occurred_at     timestamptz  NOT NULL,
+    actor           jsonb        NOT NULL,
+    correlation_id  varchar(128) NOT NULL,
+    data            jsonb        NOT NULL,
+    recorded_at     timestamptz  NOT NULL DEFAULT now()
+);
+CREATE INDEX audit_log_occurred_idx    ON audit_log (occurred_at DESC, event_id);
+CREATE INDEX audit_log_type_idx        ON audit_log (type, occurred_at DESC);
+CREATE INDEX audit_log_correlation_idx ON audit_log (correlation_id);
+-- "Trail of one vacation request" lookups.
+CREATE INDEX audit_log_request_idx     ON audit_log ((data ->> 'requestId')) WHERE data ? 'requestId';

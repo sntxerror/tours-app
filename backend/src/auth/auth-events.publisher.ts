@@ -1,38 +1,50 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { getRequestContext } from '../common/request-context/request-context';
 import { ANONYMOUS_ACTOR, userActor } from '../events/event-envelope';
-import { EventPublisherService } from '../events/event-publisher.service';
+import { AuthEvent, type LoginFailureReason } from '../events/event-types';
+import { OutboxService } from '../events/outbox/outbox.service';
 import type { User } from '../users/user.entity';
 
-export const AuthEvent = {
-  LoginSucceeded: 'travel.auth.login-succeeded',
-  LoginFailed: 'travel.auth.login-failed',
-} as const;
-
-export type LoginFailureReason = 'unknown-email' | 'wrong-password';
+export { AuthEvent } from '../events/event-types';
+export type { LoginFailureReason } from '../events/event-types';
 
 /**
- * Security/audit stream. Best-effort like the other publishers. Passwords are never included; the
- * attempted email is (lower-cased) so repeated failures against one account can be spotted, and the
- * reason is for operators only: the HTTP response stays the same for both failure cases.
+ * Security/audit stream, recorded in the outbox. A login is not a change to stored business data, so
+ * if recording itself fails this is logged and the login response is left alone. Passwords are never
+ * included; the attempted email is (lower-cased) so repeated failures against one account can be
+ * spotted, and the reason is for operators only: the HTTP response is the same for both failures.
  */
 @Injectable()
 export class AuthEventsPublisher {
-  constructor(private readonly publisher: EventPublisherService) {}
+  private readonly logger = new Logger(AuthEventsPublisher.name);
 
-  loginSucceeded(user: Pick<User, 'id' | 'role'>): Promise<void> {
-    return this.publisher.publishBestEffort(
-      AuthEvent.LoginSucceeded,
-      { userId: user.id, role: user.role, ip: getRequestContext()?.ip },
-      { actor: userActor(user) },
+  constructor(private readonly outbox: OutboxService) {}
+
+  async loginSucceeded(user: Pick<User, 'id' | 'role'>): Promise<void> {
+    await this.safely(AuthEvent.LoginSucceeded, () =>
+      this.outbox.record(
+        AuthEvent.LoginSucceeded,
+        { userId: user.id, role: user.role, ip: getRequestContext()?.ip },
+        userActor(user),
+      ),
     );
   }
 
-  loginFailed(email: string, reason: LoginFailureReason): Promise<void> {
-    return this.publisher.publishBestEffort(
-      AuthEvent.LoginFailed,
-      { email: email.trim().toLowerCase(), reason, ip: getRequestContext()?.ip },
-      { actor: ANONYMOUS_ACTOR },
+  async loginFailed(email: string, reason: LoginFailureReason): Promise<void> {
+    await this.safely(AuthEvent.LoginFailed, () =>
+      this.outbox.record(
+        AuthEvent.LoginFailed,
+        { email: email.trim().toLowerCase(), reason, ip: getRequestContext()?.ip },
+        ANONYMOUS_ACTOR,
+      ),
     );
+  }
+
+  private async safely(type: string, record: () => Promise<void>): Promise<void> {
+    try {
+      await record();
+    } catch (err) {
+      this.logger.warn(`Could not record ${type}: ${(err as Error).message}`);
+    }
   }
 }

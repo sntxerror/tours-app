@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository, type SelectQueryBuilder } from 'typeorm';
+import { type EntityManager, QueryFailedError, Repository, type SelectQueryBuilder } from 'typeorm';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { type Page, toPage } from '../common/pagination/page';
 import type { PaginationQueryDto } from '../common/pagination/pagination-query.dto';
@@ -49,18 +49,21 @@ export class VacationRequestsService {
     assertValidPeriod(dto.startDate, dto.endDate);
     await this.assertNoOverlap(user.id, dto.startDate, dto.endDate);
 
-    const saved = await this.persist(() =>
-      this.requests.save(
-        this.requests.create({
-          userId: user.id,
-          startDate: dto.startDate,
-          endDate: dto.endDate,
-          reason: dto.reason?.trim() || null,
-        }),
-      ),
-    );
-    void this.events.submitted(saved, userActor(user));
-    return saved;
+    // The event is recorded in the same transaction, so it exists if and only if the request does.
+    return this.transaction(async (em, repo) => {
+      const saved = await this.persist(() =>
+        repo.save(
+          repo.create({
+            userId: user.id,
+            startDate: dto.startDate,
+            endDate: dto.endDate,
+            reason: dto.reason?.trim() || null,
+          }),
+        ),
+      );
+      await this.events.submitted(saved, userActor(user), em);
+      return saved;
+    });
   }
 
   listMine(user: AuthenticatedUser, query: ListMyVacationRequestsQueryDto) {
@@ -88,18 +91,21 @@ export class VacationRequestsService {
     }
 
     const reason = dto.reason === undefined ? current.reason : dto.reason.trim() || null;
-    await this.persist(async () => {
-      // Guarded on status so a concurrent approval cannot be overwritten.
-      const { affected } = await this.requests.update(
-        { id, status: VacationStatus.Pending },
-        { startDate, endDate, reason },
-      );
-      if (!affected) throw this.notModifiable(VacationStatus.Approved);
-    });
+    return this.transaction(async (em, repo) => {
+      await this.persist(async () => {
+        // Guarded on status so a concurrent approval cannot be overwritten. A new period starts a
+        // new life: it can expire again, so the expiry marker is cleared.
+        const { affected } = await repo.update(
+          { id, status: VacationStatus.Pending },
+          { startDate, endDate, reason, ...(periodChanged ? { expiredAt: null } : {}) },
+        );
+        if (!affected) throw this.notModifiable(VacationStatus.Approved);
+      });
 
-    const updated = await this.findOrFail(id);
-    void this.events.updated(current, updated, userActor(user));
-    return updated;
+      const updated = await this.findOrFail(id, repo);
+      await this.events.updated(current, updated, userActor(user), em);
+      return updated;
+    });
   }
 
   /** Cancels (deletes) a still-pending request. */
@@ -107,9 +113,11 @@ export class VacationRequestsService {
     const current = await this.findOwnedOrFail(id, user);
     this.assertModifiable(current);
 
-    const { affected } = await this.requests.delete({ id, status: VacationStatus.Pending });
-    if (!affected) throw this.notModifiable(VacationStatus.Approved);
-    void this.events.cancelled(current, userActor(user));
+    await this.transaction(async (em, repo) => {
+      const { affected } = await repo.delete({ id, status: VacationStatus.Pending });
+      if (!affected) throw this.notModifiable(VacationStatus.Approved);
+      await this.events.cancelled(current, userActor(user), em);
+    });
   }
 
   // ---------------------------------------------------------------- validator
@@ -178,18 +186,20 @@ export class VacationRequestsService {
       throw new BadRequestException('A comment is required when rejecting a request');
     }
 
-    await this.persist(async () => {
-      // Atomic compare-and-set: two validators racing on the same request cannot both succeed.
-      const { affected } = await this.requests.update(
-        { id, status: VacationStatus.Pending },
-        { status, comments: comment?.trim() || null },
-      );
-      if (!affected) throw new ConflictException('Request was already decided');
-    });
+    return this.transaction(async (em, repo) => {
+      await this.persist(async () => {
+        // Atomic compare-and-set: two validators racing on the same request cannot both succeed.
+        const { affected } = await repo.update(
+          { id, status: VacationStatus.Pending },
+          { status, comments: comment?.trim() || null },
+        );
+        if (!affected) throw new ConflictException('Request was already decided');
+      });
 
-    const decided = await this.findOrFail(id);
-    void this.events.decided(decided, userActor(validator));
-    return decided;
+      const decided = await this.findOrFail(id, repo);
+      await this.events.decided(decided, userActor(validator), em);
+      return decided;
+    });
   }
 
   private list(
@@ -209,8 +219,18 @@ export class VacationRequestsService {
       .then(([items, total]) => toPage(items, total, { page, limit }));
   }
 
-  private async findOrFail(id: string): Promise<VacationRequest> {
-    const found = await this.requests.findOne({ where: { id }, relations: { user: true } });
+  /** Runs `work` in one database transaction; use its manager for everything that must commit together. */
+  private transaction<T>(
+    work: (em: EntityManager, repo: Repository<VacationRequest>) => Promise<T>,
+  ): Promise<T> {
+    return this.requests.manager.transaction((em) => work(em, em.getRepository(VacationRequest)));
+  }
+
+  private async findOrFail(
+    id: string,
+    repo: Repository<VacationRequest> = this.requests,
+  ): Promise<VacationRequest> {
+    const found = await repo.findOne({ where: { id }, relations: { user: true } });
     if (!found) throw new NotFoundException('Vacation request not found');
     return found;
   }

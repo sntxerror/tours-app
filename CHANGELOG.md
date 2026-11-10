@@ -23,7 +23,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Unit tests for the envelope, publishers, expiry job, login events and logging; e2e specs for every lifecycle and login event.
 - More test coverage: unit tests for `VacationRequestsService` (create, update, cancel, decisions, races, listing, team calendar), the JWT and roles guards, `UsersService`, pagination, the calendar-date validator, the request DTOs and the received-events store; API e2e specs for the vacation request lifecycle (validation, ownership, filters, pagination, decisions), the team calendar, the user list and extra auth cases.
 
+- Transactional outbox (`event_outbox`): events are written in the same transaction as the change and published by a relay (`FOR UPDATE SKIP LOCKED`, at-least-once, parks events the bus rejects, graceful flush on shutdown, purge of published rows). Login events use it too.
+- Dead-letter queue (`<queue>-dlq`) with a redrive policy and explicit visibility timeout (`EVENT_MAX_RECEIVE_COUNT`, `EVENT_VISIBILITY_TIMEOUT_SECONDS`, `EVENT_DLQ_NAME`).
+- Event routing through `commoneventframework` (`EventRouter`, route `PUT /events/<type>`) with a subscriber API; consumers are idempotent.
+- Audit trail: `audit_log` (append-only, keyed by event id) filled by an event subscriber, and `GET /api/audit-log` for validators (`type`, `correlationId`, `requestId` filters, pagination).
+- Typed event contract (`events/event-types.ts`) used by the publishers and consumers.
+- Tests: unit specs for the outbox, relay, router, consumer, queue provisioning, audit trail and guards; e2e specs that follow events through the whole chain and the audit endpoint.
+
 ### Changed
+
+- **Breaking for existing databases:** new tables `event_outbox` and `audit_log` and a new grant set (`docker compose down -v`).
+- The `/api/test/*` dev endpoints are disabled unless `ENABLE_TEST_ENDPOINTS=true` (they exposed event payloads without authentication). Add the variable to your `backend/.env` for the `/events-test` page (it is in `backend/.env.example`).
+- Services no longer publish events directly or best-effort; a failure to record an event now fails (and rolls back) the request, which is what makes the events reliable.
+- Editing a request's period clears its expiry marker so it can expire again.
+- E2E date ranges are drawn from a much larger window: with the old one, repeated runs against the same database started to collide.
 
 - Event logs are one clean line per event (no payload dump) and `commoneventframework` debug output is muted.
 - Playwright starts its own backend/Vite on separate ports with a dedicated event bus and queue instead of reusing running servers.
