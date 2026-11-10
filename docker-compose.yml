@@ -4,7 +4,7 @@ services:
     ports:
       - '${LOCALSTACK_PORT:-4566}:4566'
     environment:
-      SERVICES: events,sqs,sns
+      SERVICES: events,sqs
       AWS_DEFAULT_REGION: eu-west-1
       # Keep LocalStack quiet: no debug output, only warnings and errors.
       DEBUG: 0

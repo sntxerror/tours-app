@@ -34,7 +34,7 @@ test.describe('team calendar', () => {
         { headers: viewer.headers },
       );
       expect(res.status()).toBe(200);
-      const items: Array<Record<string, any>> = await res.json();
+      const items: Array<{ id: string }> = await res.json();
       const mine = items.find((i) => i.id === approved.id);
       expect(mine).toEqual({
         id: approved.id,
@@ -108,9 +108,9 @@ test.describe('users', () => {
     const { headers } = await login(request, USERS.carol);
     const res = await request.get('/api/users', { headers });
     expect(res.status()).toBe(200);
-    const users: Array<Record<string, any>> = await res.json();
+    const users: Array<{ email: string; name: string }> = await res.json();
     expect(users.map((u) => u.email)).toEqual(expect.arrayContaining(Object.values(USERS)));
-    const names = users.map((u) => u.name as string);
+    const names = users.map((u) => u.name);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
     for (const u of users) expect(u).not.toHaveProperty('password');
   });

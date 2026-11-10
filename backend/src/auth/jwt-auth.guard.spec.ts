@@ -10,7 +10,7 @@ function setup({ isPublic = false, verify }: { isPublic?: boolean; verify?: jest
   const reflector = { getAllAndOverride: jest.fn().mockReturnValue(isPublic) };
   const guard = new JwtAuthGuard(jwt as unknown as JwtService, reflector as unknown as Reflector);
   const run = (authorization?: string) => {
-    const request: Record<string, any> = { headers: { authorization } };
+    const request: Record<string, unknown> = { headers: { authorization } };
     const context = {
       getHandler: () => undefined,
       getClass: () => undefined,
