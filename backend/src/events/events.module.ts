@@ -9,5 +9,6 @@ import { TestController } from './test.controller';
   imports: [LocalstackModule],
   controllers: [TestController],
   providers: [EventPublisherService, EventConsumerService, ReceivedEventsStore],
+  exports: [EventPublisherService],
 })
 export class EventsModule {}

@@ -6,6 +6,7 @@ import { AwsModule } from './aws/aws.module';
 import { EventsModule } from './events/events.module';
 import { LocalstackModule } from './localstack/localstack.module';
 import { UsersModule } from './users/users.module';
+import { VacationRequestsModule } from './vacation-requests/vacation-requests.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { UsersModule } from './users/users.module';
     EventsModule,
     UsersModule,
     AuthModule,
+    VacationRequestsModule,
   ],
 })
 export class AppModule {}
