@@ -36,3 +36,25 @@ describe('todayIso', () => {
     expect(todayIso(new Date('2030-06-15T23:59:59Z'))).toBe('2030-06-15');
   });
 });
+
+describe('assertValidPeriod edge cases', () => {
+  it('defaults "today" to the current UTC date', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2030-06-15T23:30:00Z'));
+    try {
+      expect(() => assertValidPeriod('2030-06-15', '2030-06-16')).not.toThrow();
+      expect(() => assertValidPeriod('2030-06-14', '2030-06-16')).toThrow('in the past');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('checks the date order before the past rule', () => {
+    expect(() => assertValidPeriod('2030-06-01', '2030-06-01', TODAY)).toThrow(
+      'End date must be after start date',
+    );
+  });
+
+  it('accepts periods spanning a month and year boundary', () => {
+    expect(() => assertValidPeriod('2030-12-31', '2031-01-01', TODAY)).not.toThrow();
+  });
+});

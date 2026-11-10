@@ -21,6 +21,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Events: `travel.vacation-request.expired` (system job, once per request), `travel.auth.login-succeeded` and `travel.auth.login-failed`.
 - Event envelope: `schemaVersion`, `correlationId` (from `X-Request-Id`, echoed on responses) and a typed `actor`; `updated` carries the changed dates, `approved`/`rejected` carry `decidedAt` and the comment.
 - Unit tests for the envelope, publishers, expiry job, login events and logging; e2e specs for every lifecycle and login event.
+- More test coverage: unit tests for `VacationRequestsService` (create, update, cancel, decisions, races, listing, team calendar), the JWT and roles guards, `UsersService`, pagination, the calendar-date validator, the request DTOs and the received-events store; API e2e specs for the vacation request lifecycle (validation, ownership, filters, pagination, decisions), the team calendar, the user list and extra auth cases.
 
 ### Changed
 
@@ -34,6 +35,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Single-day vacation requests are now rejected: the end date must be strictly after the start date (API rule and `vacation_dates_ck`). Existing databases need `docker compose down -v` to pick up the stricter constraint.
 
 - Less log noise: LocalStack runs with `DEBUG=0` / `LS_LOG=warn`, and the Docker image builds run `npm ci` and `npm run build` quietly.
+
+- Backend `tsconfig.json` works with TypeScript 6 (what editors pick up from the root `node_modules`): explicit `rootDir` and `types` (`jest`, `node`), unused `baseUrl` removed. Behaviour with TypeScript 5 is unchanged.
 
 ### Fixed
 

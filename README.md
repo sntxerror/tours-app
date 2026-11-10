@@ -179,4 +179,5 @@ Every event shares one envelope (`backend/src/events/event-envelope.ts`):
 - The requester and validator UIs (login, Vuex store, request forms, dashboard, team view) are not built yet.
 - No login rate limiting, refresh tokens or token revocation; tokens last `JWT_EXPIRES_IN_SECONDS` (default 1h).
 - `/api/test/*` is unauthenticated on purpose (dev-only test page) and should be removed or protected for production.
-- Test coverage is a starting point: business-date rules (unit) and auth, roles and vacation rules (API e2e). No UI e2e until the pages exist.
+- Test coverage: backend logic is unit-tested (service rules, guards, DTO validation, pagination, events) and the whole API is covered by Playwright API specs (auth, roles, vacation lifecycle, team calendar, users, events). No UI e2e until the pages exist.
+- Known bug, tracked by a `test.fail` e2e test: `GET /vacation-requests?userId=` returns 400 for the seeded users, whose ids (`00000000-...-0012`) are not RFC 4122 UUIDs and fail `@IsUUID()`. Remove the `test.fail` marker in `e2e/tests/vacation-requests.api.spec.ts` once the DTO accepts them.
