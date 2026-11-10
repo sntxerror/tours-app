@@ -30,7 +30,6 @@ interface Command {
 
 function setup(config: Record<string, unknown> = {}) {
   const values: Record<string, unknown> = { ...BASE_CONFIG, ...config };
-  /** Every AWS call in order, e.g. `CreateQueue travel-events`. */
   const calls: string[] = [];
   const queueOf = (url: unknown) => String(url).split('/').pop();
 

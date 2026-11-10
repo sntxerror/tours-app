@@ -73,7 +73,6 @@ export class EventConsumerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Returns the messages that may be deleted; those whose subscribers failed are left for redelivery. */
   async processBatch(messages: Message[], queueArn: string): Promise<Message[]> {
     const handled: Message[] = [];
     for (const message of messages) {

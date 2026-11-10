@@ -8,7 +8,6 @@ import { UserRole } from './user-role.enum';
 export class UsersController {
   constructor(private readonly users: UsersService) {}
 
-  /** Feeds the validator dashboard's "filter by user" control. */
   @Get()
   @Roles(UserRole.Validator)
   list(@Query() { role }: ListUsersQueryDto) {

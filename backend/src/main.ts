@@ -7,9 +7,9 @@ async function bootstrap(): Promise<void> {
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // strip unknown properties...
-      forbidNonWhitelisted: true, // ...and reject the request instead of silently ignoring them
-      transform: true, // run class-transformer so query strings become numbers, etc.
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
     }),
   );
   app.enableShutdownHooks();

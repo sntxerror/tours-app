@@ -10,7 +10,6 @@ defineProps<{ startError?: string; endError?: string }>();
 const startId = useId();
 const endId = useId();
 
-// The backend rejects past dates and single-day periods, so the pickers do not offer them.
 const minStart = computed(() => todayIso());
 const minEnd = computed(() => (start.value ? addDays(start.value, 1) : addDays(minStart.value, 1)));
 </script>

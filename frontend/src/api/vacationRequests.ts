@@ -11,8 +11,6 @@ export interface ListAllParams extends ListMineParams {
   userId?: string;
 }
 
-// ---- Requester
-
 export const listMine = (params: ListMineParams = {}) =>
   http.get<Page<VacationRequest>>('/vacation-requests/me', { params }).then((r) => r.data);
 
@@ -23,8 +21,6 @@ export const update = (id: string, changes: Partial<VacationRequestInput>) =>
   http.patch<VacationRequest>(`/vacation-requests/${id}`, changes).then((r) => r.data);
 
 export const cancel = (id: string) => http.delete<void>(`/vacation-requests/${id}`).then(() => {});
-
-// ---- Validator
 
 export const listAll = (params: ListAllParams = {}) =>
   http.get<Page<VacationRequest>>('/vacation-requests', { params }).then((r) => r.data);

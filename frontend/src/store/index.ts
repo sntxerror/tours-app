@@ -5,7 +5,6 @@ import { dashboard, type DashboardState } from './dashboard';
 import { myRequests, type MyRequestsState } from './myRequests';
 import { team, type TeamState } from './team';
 
-/** Shape of `store.state`; every module is namespaced (`auth/login`, `dashboard/fetch`...). */
 export interface RootState {
   auth: AuthState;
   myRequests: MyRequestsState;
@@ -15,7 +14,6 @@ export interface RootState {
 
 export const key: InjectionKey<Store<RootState>> = Symbol('store');
 
-/** Forgets the previous user's data on logout, so the next user never sees it, even briefly. */
 const resetDataOnLogout: Plugin<RootState> = (store) => {
   store.subscribe((mutation) => {
     if (mutation.type !== 'auth/clearSession') return;
@@ -29,7 +27,6 @@ export const store = createStore<RootState>({
   strict: import.meta.env.DEV,
 });
 
-/** Typed `useStore()` for components (`store.state` is `RootState`). */
 export function useStore(): Store<RootState> {
   return baseUseStore(key);
 }

@@ -65,10 +65,8 @@ test.describe('team calendar', () => {
         ).json()) as { id: string }[]
       ).map((i) => i.id);
 
-    // Window ends on the first day / starts on the last day: still overlapping.
     expect(await ids(addDays(range.startDate, -10), range.startDate)).toContain(id);
     expect(await ids(range.endDate, addDays(range.endDate, 10))).toContain(id);
-    // Windows entirely before / after.
     expect(await ids(addDays(range.startDate, -10), addDays(range.startDate, -1))).not.toContain(
       id,
     );

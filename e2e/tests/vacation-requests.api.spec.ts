@@ -71,7 +71,6 @@ test.describe('creating requests', () => {
     const alice = await login(request, USERS.alice);
     const { startDate, endDate } = futureRange(5);
     await create(request, alice, { startDate, endDate });
-    // Touching the last day is still an overlap.
     const res = await request.post(BASE, {
       headers: alice.headers,
       data: {
@@ -253,7 +252,6 @@ test.describe('modifying requests', () => {
   }) => {
     const alice = await login(request, USERS.alice);
     const a = futureRange(3);
-    // Derived from `a` (not another random range) so the two can never collide by chance.
     const b = {
       startDate: new Date(Date.parse(a.startDate) + 20 * 864e5).toISOString().slice(0, 10),
       endDate: new Date(Date.parse(a.endDate) + 20 * 864e5).toISOString().slice(0, 10),
@@ -266,7 +264,6 @@ test.describe('modifying requests', () => {
       409,
       /overlap/i,
     );
-    // Re-saving the same period must not collide with itself.
     const same = await request.patch(`${BASE}/${first.id}`, { headers: alice.headers, data: a });
     expect(same.status()).toBe(200);
   });

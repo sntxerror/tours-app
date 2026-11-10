@@ -11,7 +11,6 @@ import { OutboxService } from '../events/outbox/outbox.service';
 import type { VacationRequest } from './vacation-request.entity';
 import { VacationStatus } from './vacation-status.enum';
 
-/** Ids and a small snapshot, never names, emails or the free-text reason: consumers look up the rest. */
 const snapshot = (r: VacationRequest): VacationSnapshot => ({
   requestId: r.id,
   userId: r.userId,
@@ -33,7 +32,6 @@ export class VacationEventsPublisher {
     return this.outbox.record(VacationEvent.Submitted, snapshot(request), actor, em);
   }
 
-  /** `before` is the request prior to the edit, so consumers get the diff without refetching. */
   updated(
     before: VacationRequest,
     after: VacationRequest,
@@ -57,7 +55,6 @@ export class VacationEventsPublisher {
     return this.outbox.record(VacationEvent.Cancelled, snapshot(request), actor, em);
   }
 
-  /** Approved or rejected, depending on the stored status. Carries the decision time and comment. */
   decided(request: VacationRequest, actor: EventActor, em: EntityManager): Promise<void> {
     const data = {
       ...snapshot(request),
@@ -69,7 +66,6 @@ export class VacationEventsPublisher {
     return this.outbox.record(type, data, actor, em);
   }
 
-  /** Raised by the expiry job (the system) in the same transaction that marks the request expired. */
   expired(request: VacationRequest & { expiredAt: Date }, em: EntityManager): Promise<void> {
     return this.outbox.record(
       VacationEvent.Expired,

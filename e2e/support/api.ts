@@ -1,6 +1,5 @@
 import { expect, type APIRequestContext, type APIResponse } from '@playwright/test';
 
-/** Seeded by the database init script (db/init/02-seed.sql). */
 export const DEMO_PASSWORD = 'Password123!';
 export const USERS = {
   alice: 'alice@example.com', // Requester
@@ -30,10 +29,8 @@ export async function login(
 const DAY_MS = 24 * 60 * 60 * 1000;
 const iso = (d: Date): string => d.toISOString().slice(0, 10);
 
-/** Latest start offset that still formats as a four-digit year (the API only accepts YYYY-MM-DD). */
 const MAX_OFFSET_DAYS = 2_800_000;
 const SLOT_DAYS = 30;
-/** Slots are partitioned by Playwright worker, so parallel workers can never pick the same one. */
 const WORKERS = 16;
 const worker = Number(process.env.TEST_PARALLEL_INDEX ?? 0) % WORKERS;
 const usedSlots = new Set<number>();
@@ -68,7 +65,6 @@ export function nearFutureRange(lengthDays = 3): { startDate: string; endDate: s
 
 export const daysFromToday = (days: number): string => iso(new Date(Date.now() + days * DAY_MS));
 
-/** Creates a pending request through the API (setup for UI tests) and returns it. */
 export async function createRequest(
   request: APIRequestContext,
   session: Session,
@@ -79,7 +75,6 @@ export async function createRequest(
   return res.json();
 }
 
-/** Approves (no comment) or rejects (with `comment`) a request as the given validator. */
 export async function decide(
   request: APIRequestContext,
   validator: Session,
@@ -113,13 +108,11 @@ export interface ReceivedEnvelope {
   data: Record<string, unknown>;
 }
 
-/** Every event the worker has consumed so far, newest first (no waiting). */
 export async function listEvents(
   request: APIRequestContext,
   predicate: (event: ReceivedEnvelope) => boolean = () => true,
 ): Promise<ReceivedEnvelope[]> {
   const res = await request.get('/api/test/events');
-  // The worker stores the EventBridge wrapper; our own envelope is its `detail`.
   const received: { envelope: { detail: ReceivedEnvelope } }[] = await res.json();
   return received.map((r) => r.envelope.detail).filter(predicate);
 }
@@ -144,11 +137,9 @@ export async function waitForEvent(
   return found!;
 }
 
-/** Matches the events of one vacation request, optionally of one type. */
 export const ofRequest =
   (requestId: string, type?: string) =>
   (event: ReceivedEnvelope): boolean =>
     event.data.requestId === requestId && (type === undefined || event.type === type);
 
-/** A caller-chosen request id: lets a test find the events caused by exactly its own request. */
 export const newRequestId = (): string => `e2e-${crypto.randomUUID()}`;

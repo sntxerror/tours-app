@@ -70,7 +70,6 @@ function setup(
     update: jest.fn().mockResolvedValue({ affected: 1 }),
     delete: jest.fn().mockResolvedValue({ affected: 1 }),
   };
-  // The service runs each change in a transaction: the fake one hands the same repository back.
   const em = { getRepository: () => requests };
   const transaction = jest.fn(async (work: (m: typeof em) => Promise<unknown>) => work(em));
   Object.assign(requests, { manager: { transaction } });

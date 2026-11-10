@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
-/** Rows e2e creates start at least this far out; the seed data stays within ~100 days. */
 export const E2E_MIN_OFFSET_DAYS = 400;
 
 const root = path.resolve(__dirname, '..');
@@ -23,7 +22,6 @@ function readEnv(file: string): Record<string, string> {
  */
 export default async function globalSetup(): Promise<void> {
   const env = { ...readEnv(path.join(root, '.env')), ...process.env };
-  // `pg` is a backend dependency; reuse it instead of adding one at the root.
   const { Client } = createRequire(path.join(root, 'backend/package.json'))('pg');
   const client = new Client({
     host: env.POSTGRES_HOST ?? 'localhost',

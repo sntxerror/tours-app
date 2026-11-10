@@ -25,7 +25,6 @@ import { TestController } from './test.controller';
     DevEventLogSubscriber,
     TestEndpointsGuard,
   ],
-  // Application modules record events through the outbox and subscribe through the router.
   exports: [OutboxService, EventRouter],
 })
 export class EventsModule {}

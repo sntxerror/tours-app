@@ -6,7 +6,6 @@ import { currentMonth, monthBounds, shiftMonth } from '../utils/dates';
 import type { RootState } from './index';
 
 export interface TeamState {
-  /** `YYYY-MM` */
   month: string;
   items: TeamVacation[];
   loading: boolean;

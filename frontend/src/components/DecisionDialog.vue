@@ -21,7 +21,6 @@ const hintId = useId();
 const comment = ref('');
 
 const isReject = computed(() => props.mode === 'reject');
-// Rejecting needs an explanation (business rule 5); approving may go without one.
 const missingComment = computed(() => isReject.value && comment.value.trim() === '');
 
 function confirm() {

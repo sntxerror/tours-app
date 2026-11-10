@@ -1,6 +1,5 @@
 import axios from 'axios';
 
-/** Error body produced by NestJS; validation errors list every problem in `message`. */
 interface ApiErrorBody {
   statusCode: number;
   message: string | string[];
@@ -10,7 +9,6 @@ interface ApiErrorBody {
 const GENERIC_MESSAGE = 'Something went wrong. Please try again.';
 const NETWORK_MESSAGE = 'Cannot reach the server. Check your connection and try again.';
 
-/** Turns any thrown value (usually an Axios error) into text that can be shown to the user. */
 export function toErrorMessage(error: unknown): string {
   if (!axios.isAxiosError<ApiErrorBody>(error)) return GENERIC_MESSAGE;
   if (!error.response) return NETWORK_MESSAGE;
@@ -21,7 +19,6 @@ export function toErrorMessage(error: unknown): string {
   return GENERIC_MESSAGE;
 }
 
-/** HTTP status of a failed request, if the server answered at all. */
 export function errorStatus(error: unknown): number | undefined {
   return axios.isAxiosError(error) ? error.response?.status : undefined;
 }

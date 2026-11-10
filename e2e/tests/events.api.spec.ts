@@ -9,11 +9,6 @@ import {
   waitForEvent,
 } from '../support/api';
 
-/**
- * Business actions record events in the outbox (same transaction as the change); a relay publishes
- * them to EventBridge, SQS delivers them to a consumer that routes them through the framework to its
- * subscribers. Every spec here follows an event across that whole chain to the dev event log.
- */
 test.describe('lifecycle events', () => {
   test('submitting records vacation-request.submitted with actor and correlation id', async ({
     request,
@@ -172,7 +167,7 @@ test.describe('lifecycle events', () => {
 
     const refused = await request.post('/api/vacation-requests', {
       headers: { ...alice.headers, 'x-request-id': requestId },
-      data: { startDate, endDate: startDate }, // single day: rejected by the business rules
+      data: { startDate, endDate: startDate },
     });
     expect(refused.status()).toBe(400);
 

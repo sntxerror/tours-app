@@ -12,7 +12,6 @@ export class ApproveVacationRequestDto {
 }
 
 export class RejectVacationRequestDto {
-  /** Required: a rejection without an explanation is not allowed. */
   @Transform(trim)
   @IsString()
   @IsNotEmpty({ message: 'A comment is required when rejecting a request' })

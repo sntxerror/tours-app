@@ -21,7 +21,6 @@ const router = useRouter();
 const state = computed(() => store.state.dashboard);
 const userSelectId = 'dashboard-user';
 
-// ---- Filters and page live in the URL, so refresh, back and shared links keep them.
 const query = computed(() => parseDashboardQuery(route.query));
 
 watch(
@@ -42,7 +41,6 @@ const setUser = (event: Event) =>
   navigate({ ...query.value.filters, userId: (event.target as HTMLSelectElement).value || null });
 const goToPage = (page: number) => navigate(query.value.filters, page);
 
-// ---- Approve / reject
 const decision = ref<{ mode: 'approve' | 'reject'; request: VacationRequest } | null>(null);
 const busy = ref(false);
 const dialogError = ref<string | null>(null);
@@ -71,7 +69,6 @@ async function decide(comment: string) {
     notice.value = `Request from ${request.user.name} ${mode === 'approve' ? 'approved' : 'rejected'}.`;
   } catch (e) {
     if (errorStatus(e) === 409) {
-      // Another validator was faster (or the request changed): show the current state.
       decision.value = null;
       pageError.value = `${toErrorMessage(e)}. The list has been refreshed.`;
       void store.dispatch('dashboard/fetch');

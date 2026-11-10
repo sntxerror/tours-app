@@ -6,7 +6,6 @@ import { DevEvent } from './event-types';
 import { ReceivedEventsStore } from './received-events.store';
 import { TestEndpointsGuard } from './test-endpoints.guard';
 
-/** Dev-only plumbing check behind the /events-test page; unauthenticated, so off unless ENABLE_TEST_ENDPOINTS=true. */
 @Public()
 @UseGuards(TestEndpointsGuard)
 @Controller('test')

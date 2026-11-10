@@ -7,7 +7,6 @@ const ALL_STATUSES = 'all';
 
 const first = (value: LocationQuery[string]) => (Array.isArray(value) ? value[0] : value);
 
-/** Reads the dashboard filters and page from the URL; anything invalid falls back to the default. */
 export function parseDashboardQuery(query: LocationQuery): {
   filters: DashboardFilters;
   pageNum: number;
@@ -30,7 +29,6 @@ export function parseDashboardQuery(query: LocationQuery): {
   };
 }
 
-/** Inverse of `parseDashboardQuery`; defaults are left out to keep URLs short. */
 export function toDashboardQuery(filters: DashboardFilters, pageNum: number): LocationQueryRaw {
   return {
     status: filters.status === 'Pending' ? undefined : (filters.status ?? ALL_STATUSES),

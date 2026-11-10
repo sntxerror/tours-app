@@ -8,10 +8,6 @@ export const REQUEST_ID_HEADER = 'x-request-id';
 /** Only accept sane caller-supplied ids; anything else could be used to forge or bloat log/event fields. */
 const SAFE_REQUEST_ID = /^[\w.-]{1,128}$/;
 
-/**
- * Gives every request a correlation id (the caller's `X-Request-Id` when valid, else a new UUID),
- * echoes it on the response and makes it available to the events published while handling it.
- */
 @Injectable()
 export class RequestContextMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction): void {

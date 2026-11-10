@@ -5,7 +5,6 @@ import StatusBadge from './StatusBadge.vue';
 
 defineProps<{
   items: VacationRequest[];
-  /** Validator view: add a column with the requester's name. */
   showUser?: boolean;
 }>();
 
@@ -88,7 +87,6 @@ const dayLabel = (request: VacationRequest) => {
   gap: var(--space-2);
 }
 
-/* Narrow screens: every row becomes a card, each cell labelled by its column. */
 @media (max-width: 640px) {
   .table thead {
     display: none;

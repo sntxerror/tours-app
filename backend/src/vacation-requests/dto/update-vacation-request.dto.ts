@@ -1,7 +1,6 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { IsCalendarDate } from '../../common/validators/is-calendar-date.validator';
 
-/** Partial update: omitted fields keep their current value. */
 export class UpdateVacationRequestDto {
   @IsOptional()
   @IsCalendarDate()

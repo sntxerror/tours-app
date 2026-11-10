@@ -9,7 +9,6 @@ test.describe.configure({ mode: 'serial' });
 
 const ERIN = 'Erin Nguyen';
 
-/** Opens the dashboard narrowed to Erin, so only requests made by these tests are in the list. */
 async function openDashboard(page: Page, status: 'Pending' | 'Approved' | 'Rejected' = 'Pending') {
   await page.goto('/dashboard');
   await page.getByLabel('Requester').selectOption({ label: ERIN });
@@ -167,7 +166,6 @@ test.describe('rejecting', () => {
     await page.getByLabel('Status').selectOption('Rejected');
     await expect(requestRow(page, range)).toContainText('Peak season');
 
-    // The other side of the same decision.
     await signIn(page, await login(request, USERS.erin));
     await page.goto('/my-requests');
     const row = requestRow(page, range);
@@ -185,7 +183,6 @@ test.describe('rejecting', () => {
     await requestRow(page, range).getByRole('button', { name: 'Approve' }).click();
     const dialog = page.getByRole('dialog', { name: 'Approve request' });
 
-    // Another validator was faster.
     await decide(request, await login(request, USERS.carol), id, 'reject', 'Already handled');
     await dialog.getByRole('button', { name: 'Approve' }).click();
 
@@ -208,7 +205,7 @@ test.describe('pagination', () => {
     await openDashboard(page);
     await expect(page.getByText(/Page 1 of \d+/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Previous' })).toBeDisabled();
-    await expect(page.getByRole('row')).toHaveCount(11); // header + a full page of 10
+    await expect(page.getByRole('row')).toHaveCount(11);
 
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page).toHaveURL(/page=2/);

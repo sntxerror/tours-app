@@ -19,7 +19,6 @@ import { formatRange } from '../utils/dates';
 const store = useStore();
 const state = computed(() => store.state.myRequests);
 
-// ---- New request
 const newForm = ref<InstanceType<typeof VacationRequestForm> | null>(null);
 const creating = ref(false);
 const createError = ref<string | null>(null);
@@ -40,7 +39,6 @@ async function createRequest(input: VacationRequestInput) {
   }
 }
 
-// ---- Edit and cancel (pending requests only)
 const editing = ref<VacationRequest | null>(null);
 const cancelling = ref<VacationRequest | null>(null);
 const actionBusy = ref(false);
@@ -61,7 +59,6 @@ function closeDialogs() {
   cancelling.value = null;
 }
 
-/** Runs a dialog action; on failure the dialog stays open and shows the server's message. */
 async function runAction(work: () => Promise<void>, success: string) {
   actionBusy.value = true;
   actionError.value = null;
@@ -86,7 +83,6 @@ const saveEdit = (input: VacationRequestInput) =>
 const confirmCancel = () =>
   runAction(() => store.dispatch('myRequests/cancel', cancelling.value!.id), 'Request cancelled.');
 
-// ---- List
 const setStatus = (status: VacationStatus | null) =>
   store.dispatch('myRequests/filterByStatus', status);
 const goToPage = (page: number) => store.dispatch('myRequests/goToPage', page);

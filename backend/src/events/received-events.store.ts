@@ -1,14 +1,12 @@
 import { Injectable } from '@nestjs/common';
 
 export interface ReceivedEvent {
-  /** When given, an event delivered a second time (SQS is at-least-once) is not listed twice. */
   eventId?: string;
   receivedAt: string;
   commonEventVersion: string;
   envelope: unknown;
 }
 
-/** Bounded in-memory log so the test page can display what the worker consumed. */
 @Injectable()
 export class ReceivedEventsStore {
   private static readonly LIMIT = 200;

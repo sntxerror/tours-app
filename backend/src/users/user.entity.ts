@@ -1,7 +1,6 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
 import { UserRole } from './user-role.enum';
 
-/** Mirrors db/init/01-schema.sql (schema is owned by SQL, TypeORM never synchronises it). */
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')

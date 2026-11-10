@@ -4,7 +4,6 @@ import * as requestsApi from '../api/vacationRequests';
 import type { Page, VacationRequest, VacationRequestInput, VacationStatus } from '../types';
 import type { RootState } from './index';
 
-/** The requester's own requests. */
 export interface MyRequestsState {
   page: Page<VacationRequest> | null;
   status: VacationStatus | null;
@@ -84,8 +83,6 @@ export const myRequests: Module<MyRequestsState, RootState> = {
       commit('setPageNum', pageNum);
       return dispatch('fetch');
     },
-
-    // Mutations below throw on failure so the calling form or dialog can show the error.
 
     async create({ dispatch }, input: VacationRequestInput) {
       const created = await requestsApi.create(input);

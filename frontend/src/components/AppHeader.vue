@@ -70,7 +70,6 @@ async function logout() {
 .link:hover {
   color: var(--color-text);
 }
-/* Class added by RouterLink on the page being shown. */
 .link[aria-current='page'] {
   border-bottom-color: var(--color-primary);
   color: var(--color-text);

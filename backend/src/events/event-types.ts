@@ -1,10 +1,6 @@
 import type { UserRole } from '../users/user-role.enum';
 import type { VacationStatus } from '../vacation-requests/vacation-status.enum';
 
-/**
- * The event contract: every type that can appear on the bus and the exact shape of its `data`.
- * Payloads carry ids and a small snapshot, never names, requester emails, free-text reasons or passwords.
- */
 export const VacationEvent = {
   Submitted: 'travel.vacation-request.submitted',
   Updated: 'travel.vacation-request.updated',
@@ -19,7 +15,6 @@ export const AuthEvent = {
   LoginFailed: 'travel.auth.login-failed',
 } as const;
 
-/** Dev-only plumbing check sent by POST /api/test/publish; not part of the business contract. */
 export const DevEvent = {
   Ping: 'travel.test.ping',
 } as const;
@@ -65,7 +60,6 @@ export const EVENT_ROUTE_PREFIX = '/events/';
 type BusinessEventType =
   (typeof VacationEvent)[keyof typeof VacationEvent] | (typeof AuthEvent)[keyof typeof AuthEvent];
 
-/** Every business event; the dev ping is deliberately not in it. */
 export const ALL_EVENT_TYPES: readonly BusinessEventType[] = [
   ...Object.values(VacationEvent),
   ...Object.values(AuthEvent),

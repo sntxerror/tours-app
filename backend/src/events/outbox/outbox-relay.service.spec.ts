@@ -62,7 +62,6 @@ function setup(rows: OutboxEvent[] = [], config: Record<string, unknown> = {}) {
   return { service, qb, txRepo, em, transaction, outbox, send };
 }
 
-/** The value a `() => 'sql'` update expression evaluates to. */
 const sqlOf = (value: unknown) => (value as () => string)();
 
 describe('OutboxRelayService', () => {
@@ -261,7 +260,6 @@ describe('OutboxRelayService', () => {
       service.onApplicationBootstrap();
       await jest.advanceTimersByTimeAsync(10);
 
-      // The second pass ran immediately and found nothing: the next one waits the interval.
       expect(transaction).toHaveBeenCalledTimes(2);
       await jest.advanceTimersByTimeAsync(900);
       expect(transaction).toHaveBeenCalledTimes(2);
@@ -416,7 +414,6 @@ describe('OutboxRelayService', () => {
         await destroying;
         expect(transaction).toHaveBeenCalledTimes(2);
 
-        // The in-flight run did not schedule another one.
         await jest.advanceTimersByTimeAsync(60_000);
         expect(transaction).toHaveBeenCalledTimes(2);
       });

@@ -1,20 +1,14 @@
 import axios from 'axios';
 
-/**
- * The one Axios instance of the app. `/api` is same-origin: the Vite dev server and nginx proxy it
- * to the backend, so there is no CORS and no base URL to configure.
- */
 export const http = axios.create({ baseURL: '/api' });
 
 let authToken: string | null = null;
 let unauthorizedHandler: (() => void) | null = null;
 
-/** Called by the auth store; kept here so this module never imports the store (no cycles). */
 export function setAuthToken(token: string | null): void {
   authToken = token;
 }
 
-/** Runs when a request is rejected with 401, i.e. the session expired. Wired up in `main.ts`. */
 export function onUnauthorized(handler: () => void): void {
   unauthorizedHandler = handler;
 }

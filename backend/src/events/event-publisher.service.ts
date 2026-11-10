@@ -21,7 +21,6 @@ export interface PublishOptions {
  */
 export class EventRejectedError extends Error {}
 
-/** Sends envelopes to EventBridge. Application code does not call this: it records into the outbox. */
 @Injectable()
 export class EventPublisherService {
   private readonly logger = new Logger(EventPublisherService.name);
@@ -49,17 +48,12 @@ export class EventPublisherService {
     };
   }
 
-  /** Builds and sends one event right away, throwing if it cannot be delivered. Used by the dev ping. */
   async publish<T>(type: string, data: T, options: PublishOptions): Promise<EventEnvelope<T>> {
     const envelope = this.buildEnvelope(type, data, options);
     await this.send(envelope);
     return envelope;
   }
 
-  /**
-   * Sends an existing envelope. Throws `EventRejectedError` when the bus rejects the entry and any
-   * other error when it cannot be reached.
-   */
   async send(envelope: EventEnvelope): Promise<void> {
     // Events raised while the bus is still being provisioned wait for it instead of failing.
     await this.bootstrap.infra;

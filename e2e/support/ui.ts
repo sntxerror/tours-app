@@ -30,20 +30,16 @@ const label = (iso: string): string => {
   return `${day} ${MONTHS[month - 1]}${month === 9 ? 't?' : ''} ${year}`;
 };
 
-/** Regular expression source for a range as the app prints it, e.g. `3 Mar 2027 – 6 Mar 2027`. */
 export const rangeSource = ({ startDate, endDate }: Range): string =>
   `${label(startDate)} – ${label(endDate)}`;
 
-/** Matches the text of a range as the app prints it. */
 export const rangeLabel = (range: Range): RegExp => new RegExp(rangeSource(range));
 
-/** `2027-03-03` -> `March 2027`, the team calendar heading. */
 export const monthLabel = (iso: string): string => {
   const [year, month] = iso.split('-').map(Number);
   return `${MONTH_NAMES[month - 1]} ${year}`;
 };
 
-/** Logs in through the form, the way a user does. */
 export async function loginThroughForm(
   page: Page,
   email: string,
@@ -55,10 +51,6 @@ export async function loginThroughForm(
   await page.getByRole('button', { name: 'Log in' }).click();
 }
 
-/**
- * Starts the browser logged in, without going through the form: stores the token the way the app
- * does (see `store/auth.ts`). Open the page you want afterwards with `page.goto`.
- */
 export async function signIn(page: Page, session: Session): Promise<void> {
   await page.goto('/login');
   await page.evaluate(
@@ -67,7 +59,6 @@ export async function signIn(page: Page, session: Session): Promise<void> {
   );
 }
 
-/** The table row of the request with this period (periods are unique per test). */
 export const requestRow = (page: Page, range: Range): Locator =>
   page.getByRole('row').filter({ hasText: rangeLabel(range) });
 

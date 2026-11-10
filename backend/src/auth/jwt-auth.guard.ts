@@ -9,7 +9,6 @@ import { JwtService } from '@nestjs/jwt';
 import type { AuthenticatedRequest, JwtPayload } from './auth.types';
 import { IS_PUBLIC_KEY } from './decorators/public.decorator';
 
-/** Registered globally: every route needs a valid Bearer token unless marked `@Public()`. */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(

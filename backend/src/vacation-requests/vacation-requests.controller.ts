@@ -27,8 +27,6 @@ import { VacationRequestsService } from './vacation-requests.service';
 export class VacationRequestsController {
   constructor(private readonly service: VacationRequestsService) {}
 
-  // ---- Requester
-
   @Post()
   @Roles(UserRole.Requester)
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateVacationRequestDto) {
@@ -59,8 +57,6 @@ export class VacationRequestsController {
     return this.service.remove(id, user);
   }
 
-  // ---- Validator
-
   @Get()
   @Roles(UserRole.Validator)
   listAll(@Query() query: ListVacationRequestsQueryDto) {
@@ -88,8 +84,6 @@ export class VacationRequestsController {
   ) {
     return this.service.reject(id, user, dto.comment);
   }
-
-  // ---- Both roles
 
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {

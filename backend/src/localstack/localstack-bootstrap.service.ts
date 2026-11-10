@@ -24,10 +24,6 @@ export interface ProvisionedInfra {
   queueArn: string;
 }
 
-/**
- * Idempotently provisions bus -> rule -> SQS queue on boot. Retries with
- * backoff while LocalStack is still starting. Consumers `await infra`.
- */
 @Injectable()
 export class LocalstackBootstrapService implements OnModuleInit {
   private readonly logger = new Logger(LocalstackBootstrapService.name);
@@ -44,7 +40,6 @@ export class LocalstackBootstrapService implements OnModuleInit {
     @Inject(EVENTBRIDGE_CLIENT) private readonly eventBridge: EventBridgeClient,
     @Inject(SQS_CLIENT) private readonly sqs: SQSClient,
   ) {
-    // Avoid unhandled-rejection noise if nobody awaits yet.
     this.infra.catch(() => undefined);
   }
 
@@ -81,7 +76,6 @@ export class LocalstackBootstrapService implements OnModuleInit {
     try {
       await this.eventBridge.send(new CreateEventBusCommand({ Name: busName }));
     } catch (err) {
-      // LocalStack state survives restarts (named volume), so the bus may already exist.
       if (!(err instanceof ResourceAlreadyExistsException)) throw err;
     }
 
@@ -93,7 +87,6 @@ export class LocalstackBootstrapService implements OnModuleInit {
     const queueArn = attrs.Attributes?.QueueArn;
     if (!queueArn) throw new Error(`Queue ${queueName} has no ARN`);
 
-    // Allow EventBridge to deliver to the queue (mirrors real AWS requirements).
     await this.sqs.send(
       new SetQueueAttributesCommand({
         QueueUrl,

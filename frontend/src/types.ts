@@ -1,5 +1,3 @@
-/** API shapes shared by the store, views and components (mirrors the backend responses). */
-
 export type Role = 'Requester' | 'Validator';
 
 export type VacationStatus = 'Pending' | 'Approved' | 'Rejected';
@@ -18,15 +16,11 @@ export interface VacationRequest {
   id: string;
   userId: string;
   user: User;
-  /** `YYYY-MM-DD` */
   startDate: string;
-  /** `YYYY-MM-DD`, strictly after `startDate`, inclusive. */
   endDate: string;
   reason: string | null;
   status: VacationStatus;
-  /** Validator comment; always set on rejected requests. */
   comments: string | null;
-  /** Set when the request was still pending after its start date. */
   expiredAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -44,7 +38,6 @@ export interface Page<T> {
   meta: PageMeta;
 }
 
-/** Approved vacation as exposed to the whole team (no reason or comments). */
 export interface TeamVacation {
   id: string;
   startDate: string;

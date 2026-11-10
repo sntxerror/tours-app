@@ -23,7 +23,6 @@ import { VacationRequest } from './vacation-request.entity';
 import { assertValidPeriod } from './vacation-rules';
 import { VacationStatus } from './vacation-status.enum';
 
-/** Postgres error codes raised by constraints/triggers in db/init/01-schema.sql. */
 const PG_EXCLUSION_VIOLATION = '23P01';
 const PG_CHECK_VIOLATION = '23514';
 
@@ -43,13 +42,10 @@ export class VacationRequestsService {
     private readonly events: VacationEventsPublisher,
   ) {}
 
-  // ---------------------------------------------------------------- requester
-
   async create(user: AuthenticatedUser, dto: CreateVacationRequestDto): Promise<VacationRequest> {
     assertValidPeriod(dto.startDate, dto.endDate);
     await this.assertNoOverlap(user.id, dto.startDate, dto.endDate);
 
-    // The event is recorded in the same transaction, so it exists if and only if the request does.
     return this.transaction(async (em, repo) => {
       const saved = await this.persist(() =>
         repo.save(
@@ -108,7 +104,6 @@ export class VacationRequestsService {
     });
   }
 
-  /** Cancels (deletes) a still-pending request. */
   async remove(id: string, user: AuthenticatedUser): Promise<void> {
     const current = await this.findOwnedOrFail(id, user);
     this.assertModifiable(current);
@@ -119,8 +114,6 @@ export class VacationRequestsService {
       await this.events.cancelled(current, userActor(user), em);
     });
   }
-
-  // ---------------------------------------------------------------- validator
 
   listAll(query: ListVacationRequestsQueryDto) {
     return this.list(query, (qb) => {
@@ -137,8 +130,6 @@ export class VacationRequestsService {
     return this.decide(id, validator, VacationStatus.Rejected, comment);
   }
 
-  // ---------------------------------------------------------------- shared reads
-
   /** A requester can only see their own request; validators can see any. Others get 404, not 403. */
   async findOne(id: string, user: AuthenticatedUser): Promise<VacationRequest> {
     const found = await this.findOrFail(id);
@@ -148,7 +139,6 @@ export class VacationRequestsService {
     return found;
   }
 
-  /** Approved vacations overlapping [from, to]; the reason and validator comments are never exposed. */
   async teamCalendar({ from, to }: TeamVacationsQueryDto): Promise<TeamVacation[]> {
     const [start, end] = this.resolveWindow(from, to);
     const rows = await this.requests
@@ -168,8 +158,6 @@ export class VacationRequestsService {
       user: { id: user.id, name: user.name },
     }));
   }
-
-  // ---------------------------------------------------------------- internals
 
   private async decide(
     id: string,
@@ -211,14 +199,13 @@ export class VacationRequestsService {
     applyFilters(qb);
     return qb
       .orderBy('request.createdAt', 'DESC')
-      .addOrderBy('request.id', 'ASC') // stable order for pages
+      .addOrderBy('request.id', 'ASC')
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount()
       .then(([items, total]) => toPage(items, total, { page, limit }));
   }
 
-  /** Runs `work` in one database transaction; use its manager for everything that must commit together. */
   private transaction<T>(
     work: (em: EntityManager, repo: Repository<VacationRequest>) => Promise<T>,
   ): Promise<T> {
@@ -240,7 +227,6 @@ export class VacationRequestsService {
     return found;
   }
 
-  /** Business rule 3: approved requests are frozen. Rejected ones are final too: submit a new one. */
   private assertModifiable(request: VacationRequest): void {
     if (request.status !== VacationStatus.Pending) throw this.notModifiable(request.status);
   }
@@ -253,7 +239,6 @@ export class VacationRequestsService {
     );
   }
 
-  /** Business rule 2: no overlap with the user's own pending/approved requests (rejected ones are ignored). */
   private async assertNoOverlap(
     userId: string,
     startDate: string,
@@ -280,7 +265,6 @@ export class VacationRequestsService {
     );
   }
 
-  /** Maps database-level guards (the safety net behind the checks above, e.g. under races) to HTTP errors. */
   private async persist<T>(work: () => Promise<T>): Promise<T> {
     try {
       return await work();

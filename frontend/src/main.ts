@@ -5,7 +5,6 @@ import { router } from './router';
 import { key, store } from './store';
 import './styles/base.css';
 
-// The token expired or was revoked mid-session: log out and come back here after logging in.
 onUnauthorized(() => {
   void store.dispatch('auth/logout');
   const current = router.currentRoute.value;

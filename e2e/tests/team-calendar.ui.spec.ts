@@ -4,7 +4,6 @@ import { monthLabel, rangeLabel, rangeSource, signIn } from '../support/ui';
 
 const monthHeading = (page: Page) => page.getByRole('heading', { level: 2 });
 
-/** Clicks forward from the current month (UTC, as the app counts it) to the month of `isoDate`. */
 async function goToMonthOf(page: Page, isoDate: string): Promise<void> {
   const now = new Date();
   const [year, month] = isoDate.split('-').map(Number);

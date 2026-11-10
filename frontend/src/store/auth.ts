@@ -70,7 +70,6 @@ export const auth: Module<AuthState, RootState> = {
       commit('clearSession');
     },
 
-    /** Turns a token kept from a previous visit back into a session; drops it if it is no longer valid. */
     async restore({ state, commit, dispatch }) {
       if (!state.token || state.user) return;
       setAuthToken(state.token);

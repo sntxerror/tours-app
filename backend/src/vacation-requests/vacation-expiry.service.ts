@@ -54,7 +54,6 @@ export class VacationExpiryService implements OnApplicationBootstrap, OnModuleDe
     clearInterval(this.timer);
   }
 
-  /** One scheduled run: its own correlation id ties together every event it records. */
   private async runJob(): Promise<void> {
     try {
       const count = await runWithRequestContext({ correlationId: randomUUID() }, () =>
@@ -66,7 +65,6 @@ export class VacationExpiryService implements OnApplicationBootstrap, OnModuleDe
     }
   }
 
-  /** Returns how many requests were expired in this run. */
   expireOverdue(today = todayIso()): Promise<number> {
     return this.requests.manager.transaction(async (em) => {
       // Only ids come back from the UPDATE: raw `date` columns would arrive as timezone-shifted

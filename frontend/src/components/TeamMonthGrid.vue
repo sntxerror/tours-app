@@ -4,10 +4,8 @@ import type { TeamVacation } from '../types';
 import { eachDay, formatRange, isWeekend, monthBounds, todayIso } from '../utils/dates';
 
 const props = defineProps<{
-  /** `YYYY-MM` */
   month: string;
   items: TeamVacation[];
-  /** Highlighted as "you". */
   currentUserId?: string;
 }>();
 
@@ -21,7 +19,6 @@ const days = computed(() => {
   }));
 });
 
-/** One row per person, in the order the API returns them (by start date, then name). */
 const people = computed(() => {
   const byUser = new Map<string, { id: string; name: string; vacations: TeamVacation[] }>();
   for (const item of props.items) {

@@ -9,11 +9,9 @@ import ErrorMessage from './ErrorMessage.vue';
 const REASON_MAX_LENGTH = 1000;
 
 const props = defineProps<{
-  /** Prefills the form (editing); empty when creating. */
   initial?: { startDate: string; endDate: string; reason: string | null };
   submitLabel: string;
   busy?: boolean;
-  /** Error returned by the server for the last submit. */
   error?: string | null;
 }>();
 const emit = defineEmits<{ submit: [input: VacationRequestInput] }>();
@@ -24,7 +22,6 @@ const form = reactive({
   end: props.initial?.endDate ?? '',
   reason: props.initial?.reason ?? '',
 });
-// Errors appear after the first submit attempt, not while the user is still typing.
 const submitted = ref(false);
 
 // A started pending request may keep its dates (the API only checks the past when they change).
@@ -42,12 +39,10 @@ function onSubmit() {
   emit('submit', {
     startDate: form.start,
     endDate: form.end,
-    // Editing sends '' to clear the reason; creating just leaves it out.
     ...(reason || props.initial ? { reason } : {}),
   });
 }
 
-/** Empties the form after a successful submit. */
 function reset() {
   form.start = '';
   form.end = '';

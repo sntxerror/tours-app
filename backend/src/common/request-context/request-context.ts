@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-/** Per-request (or per-background-job) facts that events pick up without every caller passing them down. */
 export interface RequestContext {
   correlationId: string;
   ip?: string;

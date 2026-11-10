@@ -11,7 +11,6 @@ async function send() {
   error.value = null;
   try {
     await sendTestEvent();
-    // The worker needs a moment to pick the message up.
     setTimeout(() => emit('sent'), 500);
   } catch (e) {
     error.value = (e as Error).message;

@@ -4,7 +4,6 @@ import type { VacationStatus } from '../types';
 
 const props = defineProps<{
   status: VacationStatus;
-  /** `expiredAt` of the request: a pending request whose start date has passed. */
   expiredAt?: string | null;
 }>();
 

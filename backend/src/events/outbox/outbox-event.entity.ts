@@ -2,7 +2,6 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
 import { EVENT_SCHEMA_VERSION, type EventActor, type EventEnvelope } from '../event-envelope';
 import { DEFAULT_EVENT_SOURCE } from '../event-publisher.service';
 
-/** Mirrors `event_outbox` in db/init/01-schema.sql. `id` doubles as the event id. */
 @Entity('event_outbox')
 export class OutboxEvent {
   @PrimaryColumn({ type: 'uuid' })
@@ -26,7 +25,6 @@ export class OutboxEvent {
   @Column({ name: 'published_at', type: 'timestamptz', nullable: true })
   publishedAt: Date | null;
 
-  /** How often the bus rejected this event; the relay parks it after a few. */
   @Column({ type: 'integer', default: 0 })
   attempts: number;
 
@@ -34,7 +32,6 @@ export class OutboxEvent {
   lastError: string | null;
 }
 
-/** The envelope consumers receive; identical on every (re)delivery because it is rebuilt from the row. */
 export const toEnvelope = (row: OutboxEvent): EventEnvelope => ({
   eventId: row.id,
   schemaVersion: EVENT_SCHEMA_VERSION,

@@ -12,7 +12,6 @@ import type { EventEnvelope } from './event-envelope';
 import { describeEvent, withQuietConsoleLog } from './event-log';
 import { EVENT_ROUTE_PREFIX, type EventType } from './event-types';
 
-/** The message as it came off the queue, for subscribers that keep the raw delivery (the dev log). */
 export interface Delivery {
   body: unknown;
   commonEventVersion: string;
@@ -27,13 +26,11 @@ export interface Subscription {
   handle: EventHandler;
 }
 
-/** What the input parser hands to a route's handler. */
 interface ParsedEvent {
   envelope: EventEnvelope;
   body: unknown;
 }
 
-/** A message no retry can fix: it is logged and dropped instead of being redelivered forever. */
 export class MalformedMessageError extends Error {}
 
 const PARSER_REF = 'events#parseEnvelope';
@@ -59,7 +56,7 @@ export class EventRouter {
 
   subscribe(subscription: Subscription): void {
     this.subscriptions.push(subscription);
-    this.routes = undefined; // rebuilt on the next dispatch
+    this.routes = undefined;
   }
 
   async dispatch(message: Message, queueArn: string): Promise<void> {
@@ -86,14 +83,12 @@ export class EventRouter {
         },
       ],
     };
-    // Normalise exactly as the Lambda would; the library prints debug lines to the console, mute them.
     const common = withQuietConsoleLog(() =>
       buildCommonEvent(sqsEvent as unknown as LambdaEvent, routes),
     );
 
     const route = getRouteConfig(routes, common.method, common.path);
     if (!route?.handler) {
-      // A valid event nobody subscribed to: nothing to do, and retrying will not change that.
       this.logger.warn(
         `No subscriber for ${common.path.slice(EVENT_ROUTE_PREFIX.length)}, skipping`,
       );
@@ -105,7 +100,6 @@ export class EventRouter {
     await handle(parse ? parse(common) : {}, common);
   }
 
-  /** One route per subscribed type, all sharing the envelope parser. */
   private getRoutes(): Set<RouteConfig> {
     if (this.routes) return this.routes;
     const routes = new Set<RouteConfig>();
@@ -172,7 +166,6 @@ function withRoute(body: string | undefined): string {
   return JSON.stringify({ ...wrapper, path: `${EVENT_ROUTE_PREFIX}${type}` });
 }
 
-/** The routes' `x-inputParser`: returns the envelope carried in `detail`, or rejects the message. */
 export function parseEnvelope(common: CommonEvent): ParsedEvent {
   const type = common.path.slice(EVENT_ROUTE_PREFIX.length);
   const body: unknown = JSON.parse(common.body ?? 'null');

@@ -75,7 +75,6 @@ test.describe('submitting a request', () => {
     await expect(
       page.getByRole('region', { name: 'New request' }).getByRole('alert'),
     ).toContainText(/Dates overlap with your pending request/);
-    // The input is kept so the user can adjust it.
     await expect(page.getByLabel('Start date')).toHaveValue(range.startDate);
   });
 });

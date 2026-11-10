@@ -11,7 +11,6 @@ import { VacationRequestsModule } from './vacation-requests/vacation-requests.mo
 
 @Module({
   imports: [
-    // Outside Docker the POSTGRES_* values come from the root .env; compose injects them in containers.
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../.env'] }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -19,14 +18,12 @@ import { VacationRequestsModule } from './vacation-requests/vacation-requests.mo
         type: 'postgres',
         host: config.get<string>('POSTGRES_HOST') ?? 'localhost',
         port: Number(config.get('POSTGRES_PORT') ?? 5432),
-        // Least-privilege role (APP_DB_*), not the POSTGRES_USER superuser.
         username: config.getOrThrow<string>('APP_DB_USER'),
         password: config.getOrThrow<string>('APP_DB_PASSWORD'),
         database: config.getOrThrow<string>('POSTGRES_DB'),
         autoLoadEntities: true,
         // The schema lives in db/init/*.sql (constraints, triggers); TypeORM must never alter it.
         synchronize: false,
-        // Ids come from the built-in gen_random_uuid(); the app role may not create extensions anyway.
         installExtensions: false,
       }),
     }),

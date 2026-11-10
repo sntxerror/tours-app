@@ -9,7 +9,6 @@ import type { UserRole } from '../users/user-role.enum';
 import type { AuthenticatedRequest } from './auth.types';
 import { ROLES_KEY } from './decorators/roles.decorator';
 
-/** Runs after JwtAuthGuard; enforces `@Roles(...)` when present. */
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}

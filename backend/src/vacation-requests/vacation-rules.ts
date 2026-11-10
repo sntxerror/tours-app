@@ -1,6 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
 
-/** Today as `YYYY-MM-DD` (UTC). ISO dates compare correctly as plain strings. */
 export const todayIso = (now: Date = new Date()): string => now.toISOString().slice(0, 10);
 
 /**

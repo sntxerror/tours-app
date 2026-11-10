@@ -2,7 +2,6 @@
 import { useId } from 'vue';
 import { VACATION_STATUSES, type VacationStatus } from '../types';
 
-/** `null` means "all statuses". */
 const model = defineModel<VacationStatus | null>({ required: true });
 const id = useId();
 

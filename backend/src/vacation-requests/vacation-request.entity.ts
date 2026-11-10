@@ -43,11 +43,9 @@ export class VacationRequest {
   })
   status: VacationStatus;
 
-  /** Validator's comment; mandatory when rejecting. */
   @Column({ type: 'text', nullable: true })
   comments: string | null;
 
-  /** Set once by the expiry job when the request was still Pending after its start date. */
   @Column({ name: 'expired_at', type: 'timestamptz', nullable: true })
   expiredAt: Date | null;
 

@@ -16,7 +16,6 @@ export class AuthController {
     return this.auth.login(dto);
   }
 
-  /** Lets the SPA restore the session from a stored token. */
   @Get('me')
   me(@CurrentUser() user: AuthenticatedUser) {
     return this.auth.profile(user.id);

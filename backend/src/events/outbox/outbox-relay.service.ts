@@ -55,7 +55,6 @@ export class OutboxRelayService implements OnApplicationBootstrap, OnModuleDestr
     clearTimeout(this.timer);
     await this.inFlight;
     if (!this.enabled) return;
-    // Graceful restarts deliver what is pending instead of leaving it for the next start.
     try {
       await Promise.race([
         this.drain(),
@@ -82,7 +81,6 @@ export class OutboxRelayService implements OnApplicationBootstrap, OnModuleDestr
     let delay = this.pollIntervalMs();
     try {
       const { sent, claimed } = await this.drain();
-      // A full batch means there is probably more waiting: keep going without pausing.
       if (claimed === OUTBOX_BATCH_SIZE && sent === claimed) delay = 0;
       await this.purgeIfDue();
     } catch (err) {
@@ -91,11 +89,6 @@ export class OutboxRelayService implements OnApplicationBootstrap, OnModuleDestr
     this.schedule(delay);
   }
 
-  /**
-   * One pass: claims a batch and publishes it in order. A bus that cannot be reached stops the pass
-   * and leaves the rows untouched (they are retried next time); a bus that rejects a specific event
-   * counts against that row only.
-   */
   async drain(): Promise<{ claimed: number; sent: number }> {
     return this.outbox.manager.transaction(async (em) => {
       const repo = em.getRepository(OutboxEvent);
@@ -135,7 +128,6 @@ export class OutboxRelayService implements OnApplicationBootstrap, OnModuleDestr
     });
   }
 
-  /** Published rows only exist to be retried or inspected shortly after; drop them after a while. */
   private async purgeIfDue(): Promise<void> {
     if (Date.now() - this.lastPurge < PURGE_EVERY_MS) return;
     this.lastPurge = Date.now();

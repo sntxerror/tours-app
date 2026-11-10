@@ -4,14 +4,11 @@ import type { Role } from '../types';
 
 declare module 'vue-router' {
   interface RouteMeta {
-    /** Reachable without logging in. */
     public?: boolean;
-    /** Roles allowed on the page; any logged-in user when omitted. */
     roles?: Role[];
   }
 }
 
-/** Landing page of each role. */
 export const homeFor = (role: Role): RouteLocationRaw =>
   role === 'Validator' ? { name: 'dashboard' } : { name: 'my-requests' };
 
@@ -44,7 +41,6 @@ export const router = createRouter({
       component: () => import('../views/TeamCalendarView.vue'),
       meta: { roles: ['Requester', 'Validator'] },
     },
-    // Dev-only plumbing check for the EventBridge -> SQS pipeline. Not linked from the app.
     {
       path: '/events-test',
       name: 'events-test',

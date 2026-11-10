@@ -10,14 +10,12 @@ export interface DashboardFilters {
   userId: string | null;
 }
 
-/** The validator's view of every request. */
 export interface DashboardState {
   page: Page<VacationRequest> | null;
   filters: DashboardFilters;
   pageNum: number;
   loading: boolean;
   error: string | null;
-  /** Requesters, for the "filter by user" select. */
   users: User[];
 }
 
@@ -78,13 +76,11 @@ export const dashboard: Module<DashboardState, RootState> = {
       }
     },
 
-    /** Applies filters and page (the view keeps them in the URL) and loads the matching requests. */
     load({ commit, dispatch }, query: { filters: DashboardFilters; pageNum: number }) {
       commit('setQuery', query);
       return dispatch('fetch');
     },
 
-    /** Loaded once per session; the filter still works by id if this fails. */
     async fetchUsers({ state, commit }) {
       if (state.users.length > 0) return;
       try {

@@ -26,7 +26,6 @@ const envelope = (type: EventType, over: Partial<EventEnvelope> = {}): EventEnve
   ...over,
 });
 
-/** What EventBridge puts on the queue for one envelope. */
 const wrapper = (detailType: string, detail: unknown) => ({
   version: '0',
   id: 'eb-0001',
