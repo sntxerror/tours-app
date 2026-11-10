@@ -152,4 +152,6 @@ npx playwright install chromium            # first time only
 npm run test:e2e
 ```
 
+The specs are `*.api.spec.ts` (HTTP only) and `*.ui.spec.ts` (Chromium driving the real frontend). The UI specs use `dave@` and `erin@` so they never touch the lists the API specs read from `alice@` and `bob@`.
+
 E2E starts its own backend (`:3100`) and Vite (`:5273`) with a dedicated event bus and queue, and cleans up its own data, so it can be re-run on the same database.

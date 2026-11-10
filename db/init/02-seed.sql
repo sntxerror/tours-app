@@ -8,7 +8,7 @@
 --   Requesters: alice@example.com, bob@example.com, dave@example.com, erin@example.com
 --
 -- This file is the only place demo data is created; the backend does not seed anything.
--- The e2e suite (e2e/support/api.ts) relies on alice/bob (Requester) and carol (Validator).
+-- The e2e suite (e2e/support/api.ts) relies on alice/bob/dave/erin (Requester) and carol (Validator).
 --
 -- Dates are relative to the day the database is initialised, so the demo requests
 -- stay in the future (a couple of approved ones are in the past as history).

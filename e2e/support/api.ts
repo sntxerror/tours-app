@@ -5,6 +5,9 @@ export const DEMO_PASSWORD = 'Password123!';
 export const USERS = {
   alice: 'alice@example.com', // Requester
   bob: 'bob@example.com', // Requester
+  // Used by the UI specs only: the API specs make assumptions about alice's and bob's lists.
+  dave: 'dave@example.com', // Requester
+  erin: 'erin@example.com', // Requester
   carol: 'carol@example.com', // Validator
 } as const;
 
@@ -51,7 +54,45 @@ export function futureRange(lengthDays = 3): { startDate: string; endDate: strin
   return { startDate: iso(start), endDate: iso(new Date(start.getTime() + lengthDays * DAY_MS)) };
 }
 
+/**
+ * Like `futureRange`, but the lowest still unused slot of this worker (400-880 days out), so a UI
+ * test can reach its month with a few clicks. Still collision-free: `futureRange` skips used slots.
+ */
+export function nearFutureRange(lengthDays = 3): { startDate: string; endDate: string } {
+  let slot = worker;
+  while (usedSlots.has(slot)) slot += WORKERS;
+  usedSlots.add(slot);
+  const start = new Date(Date.now() + (400 + slot * SLOT_DAYS) * DAY_MS);
+  return { startDate: iso(start), endDate: iso(new Date(start.getTime() + lengthDays * DAY_MS)) };
+}
+
 export const daysFromToday = (days: number): string => iso(new Date(Date.now() + days * DAY_MS));
+
+/** Creates a pending request through the API (setup for UI tests) and returns it. */
+export async function createRequest(
+  request: APIRequestContext,
+  session: Session,
+  data: { startDate: string; endDate: string; reason?: string } = futureRange(),
+): Promise<{ id: string; startDate: string; endDate: string }> {
+  const res = await request.post('/api/vacation-requests', { headers: session.headers, data });
+  expect(res.status(), 'create vacation request').toBe(201);
+  return res.json();
+}
+
+/** Approves (no comment) or rejects (with `comment`) a request as the given validator. */
+export async function decide(
+  request: APIRequestContext,
+  validator: Session,
+  id: string,
+  decision: 'approve' | 'reject',
+  comment?: string,
+): Promise<void> {
+  const res = await request.post(`/api/vacation-requests/${id}/${decision}`, {
+    headers: validator.headers,
+    data: comment ? { comment } : {},
+  });
+  expect(res.status(), `${decision} request`).toBe(200);
+}
 
 export async function expectError(
   res: APIResponse,

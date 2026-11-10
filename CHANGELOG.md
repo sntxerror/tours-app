@@ -28,7 +28,7 @@ Schema and seed changes only apply to a fresh database volume: run `docker compo
 - Event routing through `commoneventframework`: one `PUT /events/<type>` route per subscribed type, an input parser that validates the envelope, and a small subscriber API. A notifications subscriber logs what it would tell requesters about approved, rejected and expired requests.
 - `ENABLE_TEST_ENDPOINTS` guard for the unauthenticated `/api/test/*` endpoints.
 - Vue frontend: login with role-based route guards, requester page (request form, own list with status filter and pagination, edit and cancel of pending requests), validator dashboard (status and user filters kept in the URL, pagination, approve, reject with a required comment) and a monthly team calendar; Vuex 4 store with namespaced modules, a single Axios client that attaches the JWT and logs out on 401, reusable components and CSS Modules.
-- Test tooling and coverage: Jest unit specs for the services, rules, guards, DTOs, events, outbox, router and consumer; Vitest + Vue Test Utils for the frontend; Playwright API specs for auth, roles, business rules, the request lifecycle, the team calendar, users and every event.
+- Test tooling and coverage: Jest unit specs for the services, rules, guards, DTOs, events, outbox, router and consumer; Vitest + Vue Test Utils for the frontend; Playwright API specs for auth, roles, business rules, the request lifecycle, the team calendar, users and every event, and Playwright browser specs for the frontend (login and route guards, requester page, validator dashboard, team calendar).
 
 ### Changed
 
