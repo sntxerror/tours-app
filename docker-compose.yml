@@ -14,6 +14,29 @@ services:
     volumes:
       - localstack-data:/var/lib/localstack
 
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      # Loopback only: reachable from this machine, not from the network.
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    environment:
+      # Single source of truth: the root .env (no fallbacks duplicated here).
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      # Used by db/init/03-app-role.sh to create the non-superuser role the backend connects as.
+      APP_DB_USER: ${APP_DB_USER:?set APP_DB_USER in .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Schema runs once on first start of an empty volume.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+
   app:
     build: ./backend
     ports:
@@ -22,8 +45,16 @@ services:
     environment:
       # Inside the compose network LocalStack is reachable by service name, not localhost.
       AWS_ENDPOINT_URL: http://localstack:4566
+      # Same variable names as the root .env; only host/port differ inside the network.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     depends_on:
       localstack:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   frontend:
@@ -35,3 +66,4 @@ services:
 
 volumes:
   localstack-data:
+  postgres-data:
