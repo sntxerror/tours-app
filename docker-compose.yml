@@ -6,6 +6,9 @@ services:
     environment:
       SERVICES: events,sqs,sns
       AWS_DEFAULT_REGION: eu-west-1
+      # Keep LocalStack quiet: no debug output, only warnings and errors.
+      DEBUG: 0
+      LS_LOG: warn
     healthcheck:
       test: ['CMD', 'curl', '-sf', 'http://localhost:4566/_localstack/health']
       interval: 5s
