@@ -26,6 +26,8 @@ import { VacationRequestsModule } from './vacation-requests/vacation-requests.mo
         autoLoadEntities: true,
         // The schema lives in db/init/*.sql (constraints, triggers); TypeORM must never alter it.
         synchronize: false,
+        // Ids come from the built-in gen_random_uuid(); the app role may not create extensions anyway.
+        installExtensions: false,
       }),
     }),
     AwsModule,
