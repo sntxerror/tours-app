@@ -65,7 +65,7 @@ export const EVENT_ROUTE_PREFIX = '/events/';
 type BusinessEventType =
   (typeof VacationEvent)[keyof typeof VacationEvent] | (typeof AuthEvent)[keyof typeof AuthEvent];
 
-/** Every business event (what the audit trail records); the dev ping is deliberately not in it. */
+/** Every business event; the dev ping is deliberately not in it. */
 export const ALL_EVENT_TYPES: readonly BusinessEventType[] = [
   ...Object.values(VacationEvent),
   ...Object.values(AuthEvent),

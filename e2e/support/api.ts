@@ -72,10 +72,22 @@ export interface ReceivedEnvelope {
   data: Record<string, unknown>;
 }
 
+/** Every event the worker has consumed so far, newest first (no waiting). */
+export async function listEvents(
+  request: APIRequestContext,
+  predicate: (event: ReceivedEnvelope) => boolean = () => true,
+): Promise<ReceivedEnvelope[]> {
+  const res = await request.get('/api/test/events');
+  // The worker stores the EventBridge wrapper; our own envelope is its `detail`.
+  const received: { envelope: { detail: ReceivedEnvelope } }[] = await res.json();
+  return received.map((r) => r.envelope.detail).filter(predicate);
+}
+
 /**
- * Waits until the worker has consumed an event matching `predicate` (EventBridge -> SQS -> the
- * dev-only `/api/test/events` log) and returns its envelope. Match on ids unique to the test, since
- * other tests run in parallel against the same bus.
+ * Waits until the worker has consumed an event matching `predicate` and returns its envelope. This
+ * exercises the whole chain: outbox -> relay -> EventBridge -> SQS -> framework routing -> subscriber
+ * (the dev-only `/api/test/events` log). Match on ids unique to the test, since other tests run in
+ * parallel against the same bus.
  */
 export async function waitForEvent(
   request: APIRequestContext,
@@ -83,67 +95,19 @@ export async function waitForEvent(
 ): Promise<ReceivedEnvelope> {
   let found: ReceivedEnvelope | undefined;
   await expect
-    .poll(
-      async () => {
-        const res = await request.get('/api/test/events');
-        // The worker stores the EventBridge wrapper; our own envelope is its `detail`.
-        const received: { envelope: { detail: ReceivedEnvelope } }[] = await res.json();
-        found = received.map((r) => r.envelope.detail).find(predicate);
-        return found !== undefined;
-      },
-      { message: 'event was not delivered to the queue consumer', timeout: 15_000 },
-    )
+    .poll(async () => (found = (await listEvents(request, predicate))[0]) !== undefined, {
+      message: 'event was not delivered to the queue consumer',
+      timeout: 15_000,
+    })
     .toBe(true);
   return found!;
 }
+
+/** Matches the events of one vacation request, optionally of one type. */
+export const ofRequest =
+  (requestId: string, type?: string) =>
+  (event: ReceivedEnvelope): boolean =>
+    event.data.requestId === requestId && (type === undefined || event.type === type);
 
 /** A caller-chosen request id: lets a test find the events caused by exactly its own request. */
 export const newRequestId = (): string => `e2e-${crypto.randomUUID()}`;
-
-export interface AuditEntry {
-  eventId: string;
-  type: string;
-  occurredAt: string;
-  correlationId: string;
-  actor: { type: string; id?: string; role?: string };
-  data: Record<string, unknown>;
-}
-
-/**
- * Waits until the audit-log consumer has recorded an event for the given filters and returns it.
- * This exercises the whole chain: outbox -> relay -> EventBridge -> SQS -> framework routing ->
- * subscriber -> database -> API. Filter on something unique to the test (its `X-Request-Id`, or the
- * vacation request id), since other tests run in parallel.
- */
-export async function waitForAuditEntry(
-  request: APIRequestContext,
-  filters: { correlationId?: string; requestId?: string; type?: string },
-  predicate: (entry: AuditEntry) => boolean = () => true,
-): Promise<AuditEntry> {
-  const { headers } = await login(request, USERS.carol);
-  const query = new URLSearchParams({ limit: '100', ...filters });
-  let found: AuditEntry | undefined;
-  await expect
-    .poll(
-      async () => {
-        const res = await request.get(`/api/audit-log?${query}`, { headers });
-        const page: { items: AuditEntry[] } = await res.json();
-        found = page.items.find(predicate);
-        return found !== undefined;
-      },
-      { message: `no audit entry for ${query}`, timeout: 15_000 },
-    )
-    .toBe(true);
-  return found!;
-}
-
-/** Every audit entry currently recorded for the filters (no waiting). */
-export async function listAuditEntries(
-  request: APIRequestContext,
-  filters: { correlationId?: string; requestId?: string; type?: string },
-): Promise<AuditEntry[]> {
-  const { headers } = await login(request, USERS.carol);
-  const query = new URLSearchParams({ limit: '100', ...filters });
-  const res = await request.get(`/api/audit-log?${query}`, { headers });
-  return (await res.json()).items;
-}

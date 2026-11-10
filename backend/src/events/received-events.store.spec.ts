@@ -14,13 +14,13 @@ describe('ReceivedEventsStore', () => {
     expect(store.list().map((e) => e.receivedAt)).toEqual(['t2', 't1']);
   });
 
-  it('keeps only the 50 most recent events', () => {
+  it('keeps only the 200 most recent events', () => {
     const store = new ReceivedEventsStore();
-    for (let i = 1; i <= 60; i++) store.add(event(i));
+    for (let i = 1; i <= 210; i++) store.add(event(i));
     const list = store.list();
-    expect(list).toHaveLength(50);
-    expect(list[0].receivedAt).toBe('t60');
-    expect(list[49].receivedAt).toBe('t11');
+    expect(list).toHaveLength(200);
+    expect(list[0].receivedAt).toBe('t210');
+    expect(list[199].receivedAt).toBe('t11');
   });
 
   it('lists an event redelivered with the same eventId once, but never dedupes events without one', () => {

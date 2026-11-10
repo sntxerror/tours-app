@@ -1,7 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { runWithRequestContext } from '../common/request-context/request-context';
 import type { OutboxService } from '../events/outbox/outbox.service';
-import { AuthEvent, AuthEventsPublisher } from './auth-events.publisher';
+import { AuthEvent } from '../events/event-types';
+import { AuthEventsPublisher } from './auth-events.publisher';
 
 function setup() {
   const record = jest.fn().mockResolvedValue(undefined);

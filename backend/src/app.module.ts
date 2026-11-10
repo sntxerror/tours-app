@@ -1,7 +1,6 @@
 import { type MiddlewareConsumer, Module, type NestModule, RequestMethod } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
 import { AwsModule } from './aws/aws.module';
@@ -32,7 +31,6 @@ import { VacationRequestsModule } from './vacation-requests/vacation-requests.mo
     AwsModule,
     LocalstackModule,
     EventsModule,
-    AuditModule,
     UsersModule,
     AuthModule,
     VacationRequestsModule,

@@ -30,7 +30,7 @@ interface Command {
 
 function setup(config: Record<string, unknown> = {}) {
   const values: Record<string, unknown> = { ...BASE_CONFIG, ...config };
-  /** Every AWS call in order, e.g. `CreateQueueCommand travel-events-dlq`. */
+  /** Every AWS call in order, e.g. `CreateQueue travel-events`. */
   const calls: string[] = [];
   const queueOf = (url: unknown) => String(url).split('/').pop();
 
@@ -90,7 +90,7 @@ describe('LocalstackBootstrapService', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
-  it('provisions bus, dead-letter queue, queue, rule and target in order', async () => {
+  it('provisions bus, queue, rule and target in order', async () => {
     const { service, calls } = setup();
 
     service.onModuleInit();
@@ -98,8 +98,6 @@ describe('LocalstackBootstrapService', () => {
 
     expect(calls).toEqual([
       'CreateEventBus',
-      'CreateQueue travel-events-dlq',
-      'GetQueueAttributes travel-events-dlq',
       'CreateQueue travel-events',
       'GetQueueAttributes travel-events',
       'SetQueueAttributes travel-events',
@@ -108,7 +106,7 @@ describe('LocalstackBootstrapService', () => {
     ]);
   });
 
-  it('resolves infra with the bus, queue and dead-letter queue', async () => {
+  it('resolves infra with the bus and queue', async () => {
     const { service } = setup();
 
     service.onModuleInit();
@@ -117,11 +115,10 @@ describe('LocalstackBootstrapService', () => {
       busName: 'travel-bus',
       queueUrl: urlOf('travel-events'),
       queueArn: arnOf('travel-events'),
-      dlqUrl: urlOf('travel-events-dlq'),
     });
   });
 
-  it('creates the queues without attributes so re-creating them is idempotent', async () => {
+  it('creates the queue without attributes so re-creating it is idempotent', async () => {
     const { service, sqsSend } = setup();
 
     service.onModuleInit();
@@ -130,17 +127,14 @@ describe('LocalstackBootstrapService', () => {
     const creates = sqsSend.mock.calls
       .map(([c]) => c as Command)
       .filter((c) => c instanceof CreateQueueCommand);
-    expect(creates.map((c) => c.input)).toEqual([
-      { QueueName: 'travel-events-dlq' },
-      { QueueName: 'travel-events' },
-    ]);
+    expect(creates.map((c) => c.input)).toEqual([{ QueueName: 'travel-events' }]);
     const getAttributes = sqsSend.mock.calls
       .map(([c]) => c as Command)
       .filter((c) => c instanceof GetQueueAttributesCommand);
     for (const c of getAttributes) expect(c.input.AttributeNames).toEqual(['QueueArn']);
   });
 
-  it('configures the main queue: visibility timeout, redrive to the DLQ and EventBridge access', async () => {
+  it('lets EventBridge deliver to the queue and sets nothing else', async () => {
     const { service, sqsSend, inputOf, attributes } = setup();
 
     service.onModuleInit();
@@ -148,11 +142,7 @@ describe('LocalstackBootstrapService', () => {
 
     expect(inputOf(sqsSend, SetQueueAttributesCommand)?.QueueUrl).toBe(urlOf('travel-events'));
     const attrs = attributes();
-    expect(attrs.VisibilityTimeout).toBe('30');
-    expect(JSON.parse(attrs.RedrivePolicy)).toEqual({
-      deadLetterTargetArn: arnOf('travel-events-dlq'),
-      maxReceiveCount: '5',
-    });
+    expect(Object.keys(attrs)).toEqual(['Policy']);
     expect(JSON.parse(attrs.Policy)).toEqual({
       Version: '2012-10-17',
       Statement: [
@@ -166,27 +156,7 @@ describe('LocalstackBootstrapService', () => {
     });
   });
 
-  it('honours EVENT_DLQ_NAME, EVENT_MAX_RECEIVE_COUNT and EVENT_VISIBILITY_TIMEOUT_SECONDS', async () => {
-    const { service, calls, attributes } = setup({
-      EVENT_DLQ_NAME: 'graveyard',
-      EVENT_MAX_RECEIVE_COUNT: '3',
-      EVENT_VISIBILITY_TIMEOUT_SECONDS: 90,
-    });
-
-    service.onModuleInit();
-    const infra = await service.infra;
-
-    expect(calls[1]).toBe('CreateQueue graveyard');
-    expect(infra.dlqUrl).toBe(urlOf('graveyard'));
-    const attrs = attributes();
-    expect(attrs.VisibilityTimeout).toBe('90');
-    expect(JSON.parse(attrs.RedrivePolicy)).toEqual({
-      deadLetterTargetArn: arnOf('graveyard'),
-      maxReceiveCount: '3',
-    });
-  });
-
-  it('routes every event on the bus to the main queue', async () => {
+  it('routes every event on the bus to the queue', async () => {
     const { service, ebSend, inputOf } = setup();
 
     service.onModuleInit();
@@ -254,20 +224,18 @@ describe('LocalstackBootstrapService', () => {
       expect(error).not.toHaveBeenCalled();
     });
 
-    it('also retries when a queue comes back without an ARN', async () => {
+    it('also retries when the queue comes back without an ARN', async () => {
       const { service, sqsSend } = setup();
       sqsSend
-        .mockImplementationOnce(async () => ({ QueueUrl: urlOf('travel-events-dlq') }))
+        .mockImplementationOnce(async () => ({ QueueUrl: urlOf('travel-events') }))
         .mockImplementationOnce(async () => ({ Attributes: {} }));
 
       service.onModuleInit();
       await jest.advanceTimersByTimeAsync(0);
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('Queue travel-events-dlq has no ARN'),
-      );
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Queue travel-events has no ARN'));
 
       await jest.advanceTimersByTimeAsync(500);
-      await expect(service.infra).resolves.toMatchObject({ dlqUrl: urlOf('travel-events-dlq') });
+      await expect(service.infra).resolves.toMatchObject({ queueUrl: urlOf('travel-events') });
     });
 
     it('caps the backoff at 5 seconds and gives up after 30 attempts', async () => {

@@ -11,10 +11,6 @@ import { OutboxService } from '../events/outbox/outbox.service';
 import type { VacationRequest } from './vacation-request.entity';
 import { VacationStatus } from './vacation-status.enum';
 
-// Re-exported so existing imports keep working; the contract itself lives in events/event-types.ts.
-export { VacationEvent } from '../events/event-types';
-export type VacationEventType = (typeof VacationEvent)[keyof typeof VacationEvent];
-
 /** Ids and a small snapshot, never names, emails or the free-text reason: consumers look up the rest. */
 const snapshot = (r: VacationRequest): VacationSnapshot => ({
   requestId: r.id,

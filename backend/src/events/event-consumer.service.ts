@@ -11,8 +11,8 @@ import { EventRouter } from './event-router.service';
 
 /**
  * Long-polls the event queue in the background and hands each message to the `EventRouter`. A message
- * is deleted only once it was handled; otherwise SQS redelivers it after the visibility timeout and
- * finally moves it to the dead-letter queue.
+ * is deleted once it was handled (or dropped as malformed by the router); when a subscriber failed it
+ * stays on the queue and SQS redelivers it after the visibility timeout.
  */
 @Injectable()
 export class EventConsumerService implements OnModuleInit, OnModuleDestroy {
@@ -73,7 +73,7 @@ export class EventConsumerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Returns the messages that were handled and may be deleted; the others are left for redelivery. */
+  /** Returns the messages that may be deleted; those whose subscribers failed are left for redelivery. */
   async processBatch(messages: Message[], queueArn: string): Promise<Message[]> {
     const handled: Message[] = [];
     for (const message of messages) {

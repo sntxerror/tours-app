@@ -11,6 +11,9 @@ const FRONTEND_URL = `http://localhost:${WEB_PORT}`;
  * E2E runs against the real stack. Postgres and LocalStack must already be up
  * (`docker compose up -d postgres localstack`); the NestJS API and the Vite dev server are started
  * here from the current source, never reused, so a stale server cannot hide a regression.
+ *
+ * Stop the Docker `app` container first (`docker compose stop app`): it shares the database, so its
+ * outbox relay would claim e2e events and publish them to its own bus instead of the e2e one.
  */
 export default defineConfig({
   testDir: './e2e/tests',

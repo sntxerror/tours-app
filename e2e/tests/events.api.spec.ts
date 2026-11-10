@@ -2,17 +2,17 @@ import { expect, test } from '@playwright/test';
 import {
   USERS,
   futureRange,
-  listAuditEntries,
+  listEvents,
   login,
   newRequestId,
-  waitForAuditEntry,
+  ofRequest,
   waitForEvent,
 } from '../support/api';
 
 /**
  * Business actions record events in the outbox (same transaction as the change); a relay publishes
- * them to EventBridge, SQS delivers them to a consumer that routes them through the framework into
- * the audit log. Every spec here follows an event across that whole chain via the audit-log API.
+ * them to EventBridge, SQS delivers them to a consumer that routes them through the framework to its
+ * subscribers. Every spec here follows an event across that whole chain to the dev event log.
  */
 test.describe('lifecycle events', () => {
   test('submitting records vacation-request.submitted with actor and correlation id', async ({
@@ -30,7 +30,7 @@ test.describe('lifecycle events', () => {
     expect(res.headers()['x-request-id']).toBe(requestId);
     const created = await res.json();
 
-    const entry = await waitForAuditEntry(request, { correlationId: requestId });
+    const entry = await waitForEvent(request, (e) => e.correlationId === requestId);
     expect(entry).toMatchObject({
       type: 'travel.vacation-request.submitted',
       correlationId: requestId,
@@ -73,10 +73,10 @@ test.describe('lifecycle events', () => {
     });
     expect(res.ok()).toBeTruthy();
 
-    const entry = await waitForAuditEntry(request, {
-      requestId: created.id,
-      type: 'travel.vacation-request.updated',
-    });
+    const entry = await waitForEvent(
+      request,
+      ofRequest(created.id, 'travel.vacation-request.updated'),
+    );
     expect(entry.data).toMatchObject({
       endDate: newEnd,
       changes: { endDate: { from: range.endDate, to: newEnd } },
@@ -96,10 +96,10 @@ test.describe('lifecycle events', () => {
     });
     expect(res.status()).toBe(204);
 
-    const entry = await waitForAuditEntry(request, {
-      requestId: created.id,
-      type: 'travel.vacation-request.cancelled',
-    });
+    const entry = await waitForEvent(
+      request,
+      ofRequest(created.id, 'travel.vacation-request.cancelled'),
+    );
     expect(entry.actor).toMatchObject({ type: 'user', role: 'Requester' });
   });
 
@@ -116,10 +116,10 @@ test.describe('lifecycle events', () => {
     });
     expect(res.ok()).toBeTruthy();
 
-    const entry = await waitForAuditEntry(request, {
-      requestId: created.id,
-      type: 'travel.vacation-request.approved',
-    });
+    const entry = await waitForEvent(
+      request,
+      ofRequest(created.id, 'travel.vacation-request.approved'),
+    );
     expect(entry.actor).toMatchObject({ type: 'user', role: 'Validator' });
     expect(entry.actor.id).not.toBe(created.userId);
     expect(entry.data).toMatchObject({ status: 'Approved', comment: 'Enjoy!' });
@@ -138,10 +138,10 @@ test.describe('lifecycle events', () => {
       data: { comment: 'Understaffed' },
     });
 
-    const entry = await waitForAuditEntry(request, {
-      requestId: created.id,
-      type: 'travel.vacation-request.rejected',
-    });
+    const entry = await waitForEvent(
+      request,
+      ofRequest(created.id, 'travel.vacation-request.rejected'),
+    );
     expect(entry.data).toMatchObject({ status: 'Rejected', comment: 'Understaffed' });
     expect(entry.actor).toMatchObject({ type: 'user', role: 'Validator' });
   });
@@ -154,16 +154,14 @@ test.describe('lifecycle events', () => {
     ).json();
     await request.post(`/api/vacation-requests/${created.id}/approve`, { headers: carol.headers });
 
-    await waitForAuditEntry(request, {
-      requestId: created.id,
-      type: 'travel.vacation-request.approved',
-    });
-    const trail = await listAuditEntries(request, { requestId: created.id });
+    await waitForEvent(request, ofRequest(created.id, 'travel.vacation-request.approved'));
+    const trail = await listEvents(request, ofRequest(created.id));
+    // A standard queue does not guarantee delivery order, so order by when the events happened.
+    trail.sort((x, y) => x.occurredAt.localeCompare(y.occurredAt));
 
-    // Newest first: approved happened after submitted.
     expect(trail.map((e) => e.type)).toEqual([
-      'travel.vacation-request.approved',
       'travel.vacation-request.submitted',
+      'travel.vacation-request.approved',
     ]);
   });
 
@@ -179,15 +177,15 @@ test.describe('lifecycle events', () => {
     expect(refused.status()).toBe(400);
 
     // A valid action under the SAME correlation id acts as the marker: once its event is in the
-    // audit log, anything the refused request had wrongly recorded would be there too.
+    // event log, anything the refused request had wrongly recorded would be there too.
     const accepted = await request.post('/api/vacation-requests', {
       headers: { ...alice.headers, 'x-request-id': requestId },
       data: futureRange(),
     });
     expect(accepted.status()).toBe(201);
-    await waitForAuditEntry(request, { correlationId: requestId });
+    await waitForEvent(request, (e) => e.correlationId === requestId);
 
-    const entries = await listAuditEntries(request, { correlationId: requestId });
+    const entries = await listEvents(request, (e) => e.correlationId === requestId);
     expect(entries.map((e) => e.type)).toEqual(['travel.vacation-request.submitted']);
   });
 });
@@ -201,7 +199,7 @@ test.describe('login events', () => {
     });
     const { user } = await res.json();
 
-    const entry = await waitForAuditEntry(request, { correlationId: requestId });
+    const entry = await waitForEvent(request, (e) => e.correlationId === requestId);
     expect(entry).toMatchObject({
       type: 'travel.auth.login-succeeded',
       actor: { type: 'user', id: user.id, role: 'Requester' },
@@ -217,7 +215,7 @@ test.describe('login events', () => {
     });
     expect(res.status()).toBe(401);
 
-    const entry = await waitForAuditEntry(request, { correlationId: requestId });
+    const entry = await waitForEvent(request, (e) => e.correlationId === requestId);
     expect(entry).toMatchObject({
       type: 'travel.auth.login-failed',
       actor: { type: 'anonymous' },
@@ -237,7 +235,7 @@ test.describe('login events', () => {
     expect(res.status()).toBe(401);
     expect((await res.json()).message).toBe('Invalid email or password');
 
-    const entry = await waitForAuditEntry(request, { correlationId: requestId });
+    const entry = await waitForEvent(request, (e) => e.correlationId === requestId);
     expect(entry.data).toMatchObject({ reason: 'unknown-email' });
   });
 });

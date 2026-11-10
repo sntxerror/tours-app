@@ -2,7 +2,14 @@ import { Logger } from '@nestjs/common';
 import type { Message } from '@aws-sdk/client-sqs';
 import type { EventEnvelope } from './event-envelope';
 import { describeEvent } from './event-log';
-import { type Delivery, type EventHandler, EventRouter } from './event-router.service';
+import type { CommonEvent } from 'commoneventframework/dist/types/commonEvent';
+import {
+  type Delivery,
+  type EventHandler,
+  EventRouter,
+  MalformedMessageError,
+  parseEnvelope,
+} from './event-router.service';
 import { AuthEvent, DevEvent, type EventType, VacationEvent } from './event-types';
 
 const QUEUE_ARN = 'arn:aws:sqs:eu-central-1:000000000000:travel-events';
@@ -53,10 +60,12 @@ function subscriber(router: EventRouter, types: readonly EventType[], handle?: E
 describe('EventRouter', () => {
   let log: jest.SpyInstance;
   let warn: jest.SpyInstance;
+  let error: jest.SpyInstance;
 
   beforeEach(() => {
     log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
   afterEach(() => jest.restoreAllMocks());
 
@@ -143,14 +152,16 @@ describe('EventRouter', () => {
       'an event without detail-type',
       JSON.stringify({ version: '0', detail: envelope(VacationEvent.Submitted) }),
     ],
-  ])('rejects %s as malformed', async (_label, body) => {
+  ])('drops %s as malformed, logging an error', async (_label, body) => {
     const router = new EventRouter();
     const sub = subscriber(router, [VacationEvent.Submitted]);
 
-    await expect(router.dispatch(message(body, 'bad-1'), QUEUE_ARN)).rejects.toThrow(
-      'Malformed message bad-1',
-    );
+    await expect(router.dispatch(message(body, 'bad-1'), QUEUE_ARN)).resolves.toBeUndefined();
+
     expect(sub.fn).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(
+      'Dropping malformed message bad-1: not an EventBridge event',
+    );
   });
 
   it.each([
@@ -160,14 +171,18 @@ describe('EventRouter', () => {
     ['an envelope without data', { ...envelope(VacationEvent.Approved), data: null }],
     ['an envelope without an actor', { ...envelope(VacationEvent.Approved), actor: undefined }],
     ['an envelope of another type', envelope(VacationEvent.Rejected)],
-  ])('rejects an event whose detail holds %s', async (_label, detail) => {
+  ])('drops an event whose detail holds %s', async (_label, detail) => {
     const router = new EventRouter();
     const sub = subscriber(router, [VacationEvent.Approved, VacationEvent.Rejected]);
 
     await expect(
       router.dispatch(message(JSON.stringify(wrapper(VacationEvent.Approved, detail))), QUEUE_ARN),
-    ).rejects.toThrow(`Malformed ${VacationEvent.Approved} event`);
+    ).resolves.toBeUndefined();
+
     expect(sub.fn).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(
+      `Dropping malformed message msg-1: the ${VacationEvent.Approved} event does not hold a valid envelope`,
+    );
   });
 
   it('skips a valid event nobody subscribed to, with a warning', async () => {
@@ -211,7 +226,7 @@ describe('EventRouter', () => {
     subscriber(router, [VacationEvent.Submitted]);
 
     await router.dispatch(eventMessage(envelope(VacationEvent.Submitted)), QUEUE_ARN);
-    await expect(router.dispatch(message('garbage'), QUEUE_ARN)).rejects.toThrow();
+    await router.dispatch(message('garbage'), QUEUE_ARN);
 
     expect(consoleLog).not.toHaveBeenCalled();
   });
@@ -229,16 +244,16 @@ describe('EventRouter', () => {
     expect(approved.fn).not.toHaveBeenCalled();
   });
 
-  it('rejects a bare body carrying its own path (not an EventBridge event)', async () => {
+  it('drops a bare body carrying its own path (not an EventBridge event)', async () => {
     const router = new EventRouter();
     const sub = subscriber(router, [VacationEvent.Submitted]);
     const env = envelope(VacationEvent.Submitted);
     const body = { path: `/events/${VacationEvent.Submitted}`, detail: env };
 
-    await expect(router.dispatch(message(JSON.stringify(body)), QUEUE_ARN)).rejects.toThrow(
-      'Malformed message',
-    );
+    await router.dispatch(message(JSON.stringify(body)), QUEUE_ARN);
+
     expect(sub.fn).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('not an EventBridge event'));
   });
 
   it('routes any subscribed type, including the dev ping outside the business list', async () => {
@@ -249,5 +264,37 @@ describe('EventRouter', () => {
     await router.dispatch(eventMessage(env), QUEUE_ARN);
 
     expect(ping.fn).toHaveBeenCalledWith(env, expect.anything());
+  });
+
+  it('does not log an error when a subscriber fails (that is retried, not dropped)', async () => {
+    const router = new EventRouter();
+    subscriber(router, [VacationEvent.Approved], async () => {
+      throw new Error('db down');
+    });
+
+    await expect(
+      router.dispatch(eventMessage(envelope(VacationEvent.Approved)), QUEUE_ARN),
+    ).rejects.toThrow('db down');
+    expect(error).not.toHaveBeenCalled();
+  });
+});
+
+describe("parseEnvelope (the routes' input parser)", () => {
+  const common = (type: string, body: unknown) =>
+    ({ path: `/events/${type}`, method: 'PUT', body: JSON.stringify(body) }) as CommonEvent;
+
+  it('returns the envelope from detail and the whole body', () => {
+    const env = envelope(VacationEvent.Expired);
+    const body = wrapper(env.type, env);
+
+    expect(parseEnvelope(common(env.type, body))).toEqual({ envelope: env, body });
+  });
+
+  it('throws MalformedMessageError when the envelope does not match the route', () => {
+    const env = envelope(VacationEvent.Expired);
+
+    expect(() => parseEnvelope(common(VacationEvent.Approved, wrapper(env.type, env)))).toThrow(
+      MalformedMessageError,
+    );
   });
 });

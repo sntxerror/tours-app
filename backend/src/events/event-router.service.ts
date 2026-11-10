@@ -27,13 +27,25 @@ export interface Subscription {
   handle: EventHandler;
 }
 
+/** What the input parser hands to a route's handler. */
+interface ParsedEvent {
+  envelope: EventEnvelope;
+  body: unknown;
+}
+
+/** A message no retry can fix: it is logged and dropped instead of being redelivered forever. */
+export class MalformedMessageError extends Error {}
+
+const PARSER_REF = 'events#parseEnvelope';
+
 /**
  * Turns queue messages into handler calls with `commoneventframework`, the way a Lambda SQS trigger
- * would: the message is normalised into a CommonEvent whose route (`PUT /events/<type>`) selects the
- * handler registered for that event type. Modules `subscribe` instead of reading the queue themselves.
+ * would: `buildCommonEvent` normalises the message, its route (`PUT /events/<type>`) selects the
+ * route config, the route's input parser validates the envelope and the handler fans it out to the
+ * subscribers of that type. Modules `subscribe` instead of reading the queue themselves.
  *
- * A message that cannot be understood or handled makes `dispatch` throw, so it stays on the queue and
- * ends up in the dead-letter queue after the redrive limit.
+ * `dispatch` only throws when a retry may help (a subscriber failed): the message then stays on the
+ * queue. A malformed message is logged and treated as handled, since there is no dead-letter queue.
  */
 @Injectable()
 export class EventRouter {
@@ -41,18 +53,32 @@ export class EventRouter {
   private readonly subscriptions: Subscription[] = [];
   private routes?: Set<RouteConfig>;
 
+  constructor() {
+    registerHandlerRef(PARSER_REF, parseEnvelope);
+  }
+
   subscribe(subscription: Subscription): void {
     this.subscriptions.push(subscription);
     this.routes = undefined; // rebuilt on the next dispatch
   }
 
   async dispatch(message: Message, queueArn: string): Promise<void> {
+    try {
+      await this.route(message, queueArn);
+    } catch (err) {
+      if (!(err instanceof MalformedMessageError)) throw err;
+      this.logger.error(`Dropping malformed message ${message.MessageId}: ${err.message}`);
+    }
+  }
+
+  private async route(message: Message, queueArn: string): Promise<void> {
+    const routes = this.getRoutes();
     const sqsEvent = {
       Records: [
         {
           messageId: message.MessageId,
           receiptHandle: message.ReceiptHandle,
-          body: this.withRoute(message),
+          body: withRoute(message.Body),
           attributes: message.Attributes ?? {},
           md5OfBody: message.MD5OfBody,
           eventSource: 'aws:sqs',
@@ -62,73 +88,51 @@ export class EventRouter {
     };
     // Normalise exactly as the Lambda would; the library prints debug lines to the console, mute them.
     const common = withQuietConsoleLog(() =>
-      buildCommonEvent(sqsEvent as unknown as LambdaEvent, this.getRoutes()),
+      buildCommonEvent(sqsEvent as unknown as LambdaEvent, routes),
     );
 
-    if (!common.path.startsWith(EVENT_ROUTE_PREFIX)) {
-      throw new Error(`Malformed message ${message.MessageId}: no event route in its body`);
-    }
-    const route = getRouteConfig(common);
-    const handler = route?.handler ? resolveHandlerRef(route.handler) : undefined;
-    if (!handler) {
+    const route = getRouteConfig(routes, common.method, common.path);
+    if (!route?.handler) {
       // A valid event nobody subscribed to: nothing to do, and retrying will not change that.
       this.logger.warn(
         `No subscriber for ${common.path.slice(EVENT_ROUTE_PREFIX.length)}, skipping`,
       );
       return;
     }
-    await handler({}, common);
+    const parse = route.inputParser ? resolveHandlerRef(route.inputParser) : undefined;
+    const handle = resolveHandlerRef(route.handler);
+    if (!handle) throw new Error(`Handler ${route.handler} is not registered`);
+    await handle(parse ? parse(common) : {}, common);
   }
 
-  /**
-   * EventBridge delivers `{ "detail-type": <type>, "detail": <our envelope>, ... }`. The framework
-   * wants the route in a `path` field of the body (on AWS an input transformer on the rule target
-   * would add it), so the adapter derives `/events/<detail-type>` here. Anything that is not an
-   * EventBridge event is malformed.
-   */
-  private withRoute(message: Message): string {
-    let wrapper: unknown;
-    try {
-      wrapper = JSON.parse(message.Body ?? '');
-    } catch {
-      wrapper = undefined;
-    }
-    const type = (wrapper as { 'detail-type'?: unknown } | null)?.['detail-type'];
-    if (typeof wrapper !== 'object' || wrapper === null || typeof type !== 'string') {
-      throw new Error(`Malformed message ${message.MessageId}: not an EventBridge event`);
-    }
-    // Our route goes last so a `path` inside the message can never redirect it.
-    return JSON.stringify({ ...wrapper, path: `${EVENT_ROUTE_PREFIX}${type}` });
-  }
-
+  /** One route per subscribed type, all sharing the envelope parser. */
   private getRoutes(): Set<RouteConfig> {
     if (this.routes) return this.routes;
     const routes = new Set<RouteConfig>();
     for (const type of new Set(this.subscriptions.flatMap((s) => s.types))) {
       const subscribers = this.subscriptions.filter((s) => s.types.includes(type));
-      if (subscribers.length === 0) continue;
       const ref = `events#${type}`;
-      registerHandlerRef(ref, (_input: unknown, common: CommonEvent) =>
-        this.handleType(type, subscribers, common),
+      registerHandlerRef(ref, (input: ParsedEvent, common: CommonEvent) =>
+        this.fanOut(type, subscribers, input, common),
       );
-      routes.add({ method: 'PUT', path: `${EVENT_ROUTE_PREFIX}${type}`, handler: ref });
+      routes.add({
+        method: 'PUT',
+        path: `${EVENT_ROUTE_PREFIX}${type}`,
+        handler: ref,
+        inputParser: PARSER_REF,
+      });
     }
     this.routes = routes;
     return routes;
   }
 
-  private async handleType(
+  private async fanOut(
     type: EventType,
     subscribers: Subscription[],
+    { envelope, body }: ParsedEvent,
     common: CommonEvent,
   ): Promise<void> {
-    const body: unknown = JSON.parse(common.body ?? 'null');
-    const envelope = (body as { detail?: unknown } | null)?.detail;
-    if (!isEnvelope(envelope, type)) {
-      throw new Error(`Malformed ${type} event: the body does not hold a valid envelope`);
-    }
     this.logger.log(`Received ${describeEvent(envelope)}`);
-
     const delivery: Delivery = { body, commonEventVersion: common.version };
     const results = await Promise.allSettled(subscribers.map((s) => s.handle(envelope, delivery)));
     const failures = results.flatMap((result, i) =>
@@ -144,7 +148,42 @@ export class EventRouter {
   }
 }
 
-function isEnvelope(value: unknown, type: EventType): value is EventEnvelope {
+/**
+ * The rule forwards the raw EventBridge event, `{ "detail-type": <type>, "detail": <our envelope>, ... }`,
+ * but the framework reads the route from a `path` field of an SQS body, so the adapter adds
+ * `/events/<detail-type>` here. Anything that is not an EventBridge event is malformed.
+ *
+ * On AWS a rule-target input transformer would normally add the path instead (LocalStack 3.x cannot
+ * apply one). The two do not combine as written: a transformer emitting only `{ path, detail }` drops
+ * `detail-type`, so this adapter would reject every message. Switching means removing or relaxing it.
+ */
+function withRoute(body: string | undefined): string {
+  let wrapper: unknown;
+  try {
+    wrapper = JSON.parse(body ?? '');
+  } catch {
+    wrapper = undefined;
+  }
+  const type = (wrapper as { 'detail-type'?: unknown } | null)?.['detail-type'];
+  if (typeof wrapper !== 'object' || wrapper === null || typeof type !== 'string') {
+    throw new MalformedMessageError('not an EventBridge event');
+  }
+  // Our route goes last so a `path` inside the message can never redirect it.
+  return JSON.stringify({ ...wrapper, path: `${EVENT_ROUTE_PREFIX}${type}` });
+}
+
+/** The routes' `x-inputParser`: returns the envelope carried in `detail`, or rejects the message. */
+export function parseEnvelope(common: CommonEvent): ParsedEvent {
+  const type = common.path.slice(EVENT_ROUTE_PREFIX.length);
+  const body: unknown = JSON.parse(common.body ?? 'null');
+  const envelope = (body as { detail?: unknown } | null)?.detail;
+  if (!isEnvelope(envelope, type)) {
+    throw new MalformedMessageError(`the ${type} event does not hold a valid envelope`);
+  }
+  return { envelope, body };
+}
+
+function isEnvelope(value: unknown, type: string): value is EventEnvelope {
   const e = value as Partial<EventEnvelope> | null;
   return (
     typeof e === 'object' &&

@@ -11,7 +11,7 @@ export interface ReceivedEvent {
 /** Bounded in-memory log so the test page can display what the worker consumed. */
 @Injectable()
 export class ReceivedEventsStore {
-  private static readonly LIMIT = 50;
+  private static readonly LIMIT = 200;
   private readonly items: ReceivedEvent[] = [];
 
   add(event: ReceivedEvent): void {

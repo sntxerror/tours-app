@@ -5,11 +5,8 @@ import { AuthEvent, type LoginFailureReason } from '../events/event-types';
 import { OutboxService } from '../events/outbox/outbox.service';
 import type { User } from '../users/user.entity';
 
-export { AuthEvent } from '../events/event-types';
-export type { LoginFailureReason } from '../events/event-types';
-
 /**
- * Security/audit stream, recorded in the outbox. A login is not a change to stored business data, so
+ * Security stream, recorded in the outbox. A login is not a change to stored business data, so
  * if recording itself fails this is logged and the login response is left alone. Passwords are never
  * included; the attempted email is (lower-cased) so repeated failures against one account can be
  * spotted, and the reason is for operators only: the HTTP response is the same for both failures.

@@ -42,17 +42,17 @@ describe('EventConsumerService', () => {
       expect(error).not.toHaveBeenCalled();
     });
 
-    it('returns only the handled messages and logs the others, carrying on after a failure', async () => {
+    it('leaves a message whose subscribers failed for redelivery and carries on', async () => {
       const { service, dispatch } = setup();
       const batch = [message('a'), message('b'), message('c')];
-      dispatch.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('Malformed x'));
+      dispatch.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('db down'));
 
       const handled = await service.processBatch(batch, QUEUE_ARN);
 
       expect(handled).toEqual([batch[0], batch[2]]);
       expect(dispatch).toHaveBeenCalledTimes(3);
       expect(error).toHaveBeenCalledTimes(1);
-      expect(error).toHaveBeenCalledWith('Could not process message b: Malformed x');
+      expect(error).toHaveBeenCalledWith('Could not process message b: db down');
     });
 
     it('handles messages one at a time, in order', async () => {

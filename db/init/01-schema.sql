@@ -81,20 +81,3 @@ CREATE TABLE event_outbox (
 CREATE INDEX event_outbox_unsent_idx ON event_outbox (occurred_at, id) WHERE published_at IS NULL;
 -- Housekeeping of already published rows.
 CREATE INDEX event_outbox_published_idx ON event_outbox (published_at) WHERE published_at IS NOT NULL;
-
--- Append-only audit trail built by a queue consumer. `event_id` is the primary key, which makes
--- recording idempotent under at-least-once delivery.
-CREATE TABLE audit_log (
-    event_id        uuid         PRIMARY KEY,
-    type            varchar(128) NOT NULL,
-    occurred_at     timestamptz  NOT NULL,
-    actor           jsonb        NOT NULL,
-    correlation_id  varchar(128) NOT NULL,
-    data            jsonb        NOT NULL,
-    recorded_at     timestamptz  NOT NULL DEFAULT now()
-);
-CREATE INDEX audit_log_occurred_idx    ON audit_log (occurred_at DESC, event_id);
-CREATE INDEX audit_log_type_idx        ON audit_log (type, occurred_at DESC);
-CREATE INDEX audit_log_correlation_idx ON audit_log (correlation_id);
--- "Trail of one vacation request" lookups.
-CREATE INDEX audit_log_request_idx     ON audit_log ((data ->> 'requestId')) WHERE data ? 'requestId';

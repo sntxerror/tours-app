@@ -22,11 +22,7 @@ export interface ProvisionedInfra {
   busName: string;
   queueUrl: string;
   queueArn: string;
-  dlqUrl: string;
 }
-
-const DEFAULT_MAX_RECEIVE_COUNT = 5;
-const DEFAULT_VISIBILITY_TIMEOUT_SECONDS = 30;
 
 /**
  * Idempotently provisions bus -> rule -> SQS queue on boot. Retries with
@@ -89,31 +85,19 @@ export class LocalstackBootstrapService implements OnModuleInit {
       if (!(err instanceof ResourceAlreadyExistsException)) throw err;
     }
 
-    const dlqName = this.config.get<string>('EVENT_DLQ_NAME') ?? `${queueName}-dlq`;
-    const maxReceiveCount = String(
-      this.config.get('EVENT_MAX_RECEIVE_COUNT') ?? DEFAULT_MAX_RECEIVE_COUNT,
+    const { QueueUrl } = await this.sqs.send(new CreateQueueCommand({ QueueName: queueName }));
+    if (!QueueUrl) throw new Error(`CreateQueue returned no QueueUrl for ${queueName}`);
+    const attrs = await this.sqs.send(
+      new GetQueueAttributesCommand({ QueueUrl, AttributeNames: ['QueueArn'] }),
     );
-    const visibilityTimeout = String(
-      this.config.get('EVENT_VISIBILITY_TIMEOUT_SECONDS') ?? DEFAULT_VISIBILITY_TIMEOUT_SECONDS,
-    );
-
-    // Queues are created without attributes (idempotent even if they exist) and configured below.
-    const dlq = await this.createQueue(dlqName);
-    const main = await this.createQueue(queueName);
-    const QueueUrl = main.url;
-    const queueArn = main.arn;
+    const queueArn = attrs.Attributes?.QueueArn;
+    if (!queueArn) throw new Error(`Queue ${queueName} has no ARN`);
 
     // Allow EventBridge to deliver to the queue (mirrors real AWS requirements).
     await this.sqs.send(
       new SetQueueAttributesCommand({
         QueueUrl,
         Attributes: {
-          VisibilityTimeout: visibilityTimeout,
-          // A message that keeps failing moves to the dead-letter queue instead of looping forever.
-          RedrivePolicy: JSON.stringify({
-            deadLetterTargetArn: dlq.arn,
-            maxReceiveCount,
-          }),
           Policy: JSON.stringify({
             Version: '2012-10-17',
             Statement: [
@@ -146,17 +130,6 @@ export class LocalstackBootstrapService implements OnModuleInit {
       }),
     );
 
-    return { busName, queueUrl: QueueUrl, queueArn, dlqUrl: dlq.url };
-  }
-
-  private async createQueue(name: string): Promise<{ url: string; arn: string }> {
-    const { QueueUrl } = await this.sqs.send(new CreateQueueCommand({ QueueName: name }));
-    if (!QueueUrl) throw new Error(`CreateQueue returned no QueueUrl for ${name}`);
-    const attrs = await this.sqs.send(
-      new GetQueueAttributesCommand({ QueueUrl, AttributeNames: ['QueueArn'] }),
-    );
-    const arn = attrs.Attributes?.QueueArn;
-    if (!arn) throw new Error(`Queue ${name} has no ARN`);
-    return { url: QueueUrl, arn };
+    return { busName, queueUrl: QueueUrl, queueArn };
   }
 }
