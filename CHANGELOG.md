@@ -24,6 +24,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Single-day vacation requests are now rejected: the end date must be strictly after the start date (API rule and `vacation_dates_ck`). Existing databases need `docker compose down -v` to pick up the stricter constraint.
 
+- Less log noise: LocalStack runs with `DEBUG=0` / `LS_LOG=warn`, and the Docker image builds run `npm ci` and `npm run build` quietly.
+
 ### Fixed
 
 - LocalStack bootstrap failed (and the consumer never started) when the event bus already existed from a previous run.
