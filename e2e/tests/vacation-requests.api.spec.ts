@@ -179,10 +179,7 @@ test.describe('reading requests', () => {
     await expectError(await request.get(`${BASE}?userId=nope`, { headers: carol.headers }), 400);
   });
 
-  // KNOWN BUG: the seeded users have ids like 00000000-0000-0000-0000-000000000012, which are not
-  // RFC-4122 UUIDs, so `@IsUUID()` on `userId` rejects them with 400 and the dashboard's
-  // "filter by user" cannot be used for seeded users. Remove `test.fail` once the DTO accepts them.
-  test.fail('validator list filters by a seeded user id', async ({ request }) => {
+  test('validator list filters by a seeded user id', async ({ request }) => {
     const bob = await login(request, USERS.bob);
     const carol = await login(request, USERS.carol);
     const { id, userId } = await create(request, bob);
