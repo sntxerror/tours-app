@@ -5,6 +5,7 @@ import {
   EventBridgeClient,
   PutRuleCommand,
   PutTargetsCommand,
+  ResourceAlreadyExistsException,
 } from '@aws-sdk/client-eventbridge';
 import {
   CreateQueueCommand,
@@ -77,7 +78,12 @@ export class LocalstackBootstrapService implements OnModuleInit {
     const queueName = this.config.getOrThrow<string>('EVENT_QUEUE_NAME');
     const ruleName = this.config.getOrThrow<string>('EVENT_RULE_NAME');
 
-    await this.eventBridge.send(new CreateEventBusCommand({ Name: busName }));
+    try {
+      await this.eventBridge.send(new CreateEventBusCommand({ Name: busName }));
+    } catch (err) {
+      // LocalStack state survives restarts (named volume), so the bus may already exist.
+      if (!(err instanceof ResourceAlreadyExistsException)) throw err;
+    }
 
     const { QueueUrl } = await this.sqs.send(new CreateQueueCommand({ QueueName: queueName }));
     if (!QueueUrl) throw new Error('CreateQueue returned no QueueUrl');
