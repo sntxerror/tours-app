@@ -7,8 +7,10 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "lib": ["ES2022", "DOM"],
-    "types": ["vite/client"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    // Vuex 4.1's package "exports" map has no "types" entry, so Bundler resolution misses them.
+    "paths": { "vuex": ["./node_modules/vuex/types/index.d.ts"] }
   },
   "include": ["src/**/*.ts", "src/**/*.vue"]
 }
