@@ -32,6 +32,12 @@ export const router = createRouter({
       component: () => import('../views/MyRequestsView.vue'),
       meta: { roles: ['Requester'] },
     },
+    {
+      path: '/dashboard',
+      name: 'dashboard',
+      component: () => import('../views/ValidatorDashboardView.vue'),
+      meta: { roles: ['Validator'] },
+    },
     // Dev-only plumbing check for the EventBridge -> SQS pipeline. Not linked from the app.
     {
       path: '/events-test',
