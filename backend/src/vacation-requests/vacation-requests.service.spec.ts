@@ -453,7 +453,7 @@ describe('VacationRequestsService listing', () => {
     const qb = queryBuilder();
     const { service } = setup({ qb });
     await service.listAll({ page: 1, limit: 5, status: VacationStatus.Approved, userId: 'u-bob' });
-    expect(qb.where).toHaveBeenCalledWith('1 = 1');
+    expect(qb.where).not.toHaveBeenCalled();
     expect(qb.andWhere).toHaveBeenCalledWith('request.status = :status', { status: 'Approved' });
     expect(qb.andWhere).toHaveBeenCalledWith('request.userId = :userId', { userId: 'u-bob' });
     expect(qb.skip).toHaveBeenCalledWith(0);

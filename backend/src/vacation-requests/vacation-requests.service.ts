@@ -124,7 +124,6 @@ export class VacationRequestsService {
 
   listAll(query: ListVacationRequestsQueryDto) {
     return this.list(query, (qb) => {
-      qb.where('1 = 1');
       if (query.status) qb.andWhere('request.status = :status', { status: query.status });
       if (query.userId) qb.andWhere('request.userId = :userId', { userId: query.userId });
     });
